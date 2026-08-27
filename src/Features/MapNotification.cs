@@ -9,6 +9,7 @@ namespace DiscordUtilities;
 public partial class DiscordUtilities
 {
     private string _currentMapName = "Unknown";
+    private string _lastNotifiedMap = "";
 
     internal void InitializeMapNotification()
     {
@@ -23,19 +24,35 @@ public partial class DiscordUtilities
         Core.Event.OnMapLoad += (@event) =>
         {
             if (!string.IsNullOrWhiteSpace(@event.MapName))
-                _currentMapName = @event.MapName;
+            {
+                var newMap = @event.MapName;
+                var isDifferentMap = !string.Equals(_lastNotifiedMap, newMap, StringComparison.OrdinalIgnoreCase);
+
+                _currentMapName = newMap;
+
+                if (isDifferentMap)
+                {
+                    _ = Task.Run(() => OnMapLoadedAsync(isExtension: false));
+                }
+            }
         };
 
-        Core.GameEvent.HookPre<EventRoundAnnounceMatchStart>((@event) =>
+        // Hook map extension commands / chat
+        Core.Command.HookClientChat((playerId, text, teamonly) =>
         {
-            _ = Task.Run(() => OnMapLoadedAsync());
+            if (string.IsNullOrWhiteSpace(text)) return HookResult.Continue;
+            var trimmed = text.Trim().ToLowerInvariant();
+            if (trimmed is "!extend" or "/extend" or "!ext" or "/ext" or "!mapextend" or "/mapextend")
+            {
+                _ = Task.Run(() => OnMapLoadedAsync(isExtension: true));
+            }
             return HookResult.Continue;
         });
 
         Core.Logger.LogInformation("[DiscordUtilities] MapNotification registered");
     }
 
-    private async Task OnMapLoadedAsync()
+    private async Task OnMapLoadedAsync(bool isExtension = false)
     {
         try
         {
@@ -52,6 +69,11 @@ public partial class DiscordUtilities
                     mapName = mapConvar.ValueAsString;
             }
 
+            if (!isExtension && string.Equals(_lastNotifiedMap, mapName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            _lastNotifiedMap = mapName;
+
             var (isWorkshop, workshopId) = SteamApiService.TryParseWorkshopId(mapName);
 
             var cleanMapName = mapName;
@@ -63,9 +85,11 @@ public partial class DiscordUtilities
             var serverName = GetServerDisplayName();
             var connectAddress = GetServerConnectAddress();
 
+            var titlePrefix = isExtension ? "⏳ Map Extended" : "🗺️ Map Notification";
+
             var embed = new DiscordEmbed
             {
-                Title = $"🗺️ Map Notification",
+                Title = titlePrefix,
                 Color = WebhookService.ParseColor(config.EmbedColor),
                 Footer = new EmbedFooter { Text = $"{serverName} • Discord Utilities" }
             };
@@ -79,7 +103,7 @@ public partial class DiscordUtilities
 
                 if (workshopInfo != null)
                 {
-                    embed.Title = $"🗺️ Map: **{workshopInfo.Title}**";
+                    embed.Title = isExtension ? $"⏳ Map Extended: **{workshopInfo.Title}**" : $"🗺️ Map: **{workshopInfo.Title}**";
                     embed.Url = workshopInfo.WorkshopUrl;
                     embed.AddField("Map Name", $"`{cleanMapName}`", true);
                     embed.AddField("Workshop ID", $"[{workshopId}]({workshopInfo.WorkshopUrl})", true);
