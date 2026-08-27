@@ -167,7 +167,7 @@ public partial class DiscordUtilities
                 else
                 {
                     var target = connectAddress.Replace("connect ", "", StringComparison.OrdinalIgnoreCase).Trim();
-                    buttonUrl = $"https://connectsteam.me/?{target}";
+                    buttonUrl = $"https://vauff.com/connect.php?ip={target}";
                 }
 
                 components =
