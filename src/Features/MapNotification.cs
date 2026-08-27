@@ -1,0 +1,185 @@
+using Microsoft.Extensions.Logging;
+using SwiftlyS2.Shared.GameEventDefinitions;
+using SwiftlyS2.Shared.Misc;
+using SwiftlyS2.Shared.GameEvents;
+using DiscordUtilities.Services;
+
+namespace DiscordUtilities;
+
+public partial class DiscordUtilities
+{
+    private string _currentMapName = "Unknown";
+
+    internal void InitializeMapNotification()
+    {
+        if (!Config.MapNotification.Enabled) return;
+
+        if (string.IsNullOrWhiteSpace(Config.MapNotification.WebhookUrl))
+        {
+            Core.Logger.LogWarning("[DiscordUtilities] MapNotification enabled but no webhook URL set");
+            return;
+        }
+
+        Core.Event.OnMapLoad += (@event) =>
+        {
+            if (!string.IsNullOrWhiteSpace(@event.MapName))
+                _currentMapName = @event.MapName;
+        };
+
+        Core.GameEvent.HookPre<EventRoundAnnounceMatchStart>((@event) =>
+        {
+            _ = Task.Run(() => OnMapLoadedAsync());
+            return HookResult.Continue;
+        });
+
+        Core.Logger.LogInformation("[DiscordUtilities] MapNotification registered");
+    }
+
+    private async Task OnMapLoadedAsync()
+    {
+        try
+        {
+            var config = Config.MapNotification;
+
+            if (Webhook.IsOnCooldown("map_notification", config.CooldownSeconds))
+                return;
+
+            var mapName = _currentMapName;
+            if (string.IsNullOrWhiteSpace(mapName) || mapName.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+            {
+                var mapConvar = Core.ConVar.FindAsString("mapname");
+                if (!string.IsNullOrWhiteSpace(mapConvar?.ValueAsString))
+                    mapName = mapConvar.ValueAsString;
+            }
+
+            var (isWorkshop, workshopId) = SteamApiService.TryParseWorkshopId(mapName);
+
+            var cleanMapName = mapName;
+            var lastSlash = mapName.LastIndexOfAny(['/', '\\']);
+            if (lastSlash >= 0 && lastSlash < mapName.Length - 1)
+                cleanMapName = mapName[(lastSlash + 1)..];
+
+            var playerCount = GetOnlinePlayerCount();
+            var serverName = GetServerDisplayName();
+            var connectAddress = GetServerConnectAddress();
+
+            var embed = new DiscordEmbed
+            {
+                Title = $"🗺️ Map Notification",
+                Color = WebhookService.ParseColor(config.EmbedColor),
+                Footer = new EmbedFooter { Text = $"{serverName} • Discord Utilities" }
+            };
+            embed.WithTimestamp();
+
+            string? mapImageUrl = null;
+
+            if (isWorkshop && config.ShowWorkshopId)
+            {
+                var workshopInfo = await SteamApi.GetWorkshopMapInfoAsync(workshopId);
+
+                if (workshopInfo != null)
+                {
+                    embed.Title = $"🗺️ Map: **{workshopInfo.Title}**";
+                    embed.Url = workshopInfo.WorkshopUrl;
+                    embed.AddField("Map Name", $"`{cleanMapName}`", true);
+                    embed.AddField("Workshop ID", $"[{workshopId}]({workshopInfo.WorkshopUrl})", true);
+
+                    if (!string.IsNullOrWhiteSpace(workshopInfo.PreviewUrl))
+                        mapImageUrl = workshopInfo.PreviewUrl;
+                }
+                else
+                {
+                    embed.AddField("Map Name", $"`{cleanMapName}`", true);
+                    embed.AddField("Workshop ID", workshopId.ToString(), true);
+                }
+            }
+            else
+            {
+                embed.AddField("Current Map", $"`{cleanMapName}`", true);
+                mapImageUrl = await SteamApi.GetStandardMapImageAsync(cleanMapName);
+            }
+
+            if (config.ShowPlayerCount)
+                embed.AddField("Players Online", $"{playerCount}", true);
+
+            var isHttpConnect = !string.IsNullOrWhiteSpace(connectAddress) &&
+                                (connectAddress.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                                 connectAddress.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
+
+            if (config.ShowServerIP && !string.IsNullOrWhiteSpace(connectAddress))
+            {
+                if (isHttpConnect)
+                {
+                    embed.AddField("Quick Connect", $"[👉 Click Here to Connect]({connectAddress})", false);
+                }
+                else
+                {
+                    embed.AddField("Quick Connect", $"`connect {connectAddress}`", false);
+                }
+            }
+
+            // Thumbnail (Server / Community Banner logo)
+            if (!string.IsNullOrWhiteSpace(config.BannerUrl))
+            {
+                embed.Thumbnail = new EmbedImage { Url = config.BannerUrl };
+            }
+
+            // Main Image (Map Image)
+            if (!string.IsNullOrWhiteSpace(mapImageUrl))
+            {
+                embed.Image = new EmbedImage { Url = mapImageUrl };
+            }
+
+            // Link Button Component (Connect Now)
+            List<DiscordComponentActionRow>? components = null;
+            if (!string.IsNullOrWhiteSpace(connectAddress))
+            {
+                string buttonUrl;
+
+                if (isHttpConnect)
+                {
+                    buttonUrl = connectAddress;
+                }
+                else
+                {
+                    var target = connectAddress.Replace("connect ", "", StringComparison.OrdinalIgnoreCase).Trim();
+                    buttonUrl = $"https://connectsteam.me/?{target}";
+                }
+
+                components =
+                [
+                    new DiscordComponentActionRow
+                    {
+                        Components =
+                        [
+                            new DiscordComponentButton
+                            {
+                                Label = "Connect Now",
+                                Url = buttonUrl,
+                                Emoji = new DiscordEmoji { Name = "🎮" }
+                            }
+                        ]
+                    }
+                ];
+            }
+
+            await Webhook.SendEmbedAsync(config.WebhookUrl, embed, username: serverName, components: components);
+        }
+        catch (Exception ex)
+        {
+            Core.Logger.LogError(ex, "[DiscordUtilities] MapNotification failed");
+        }
+    }
+
+    private int GetOnlinePlayerCount()
+    {
+        try
+        {
+            return Core.PlayerManager.GetAllValidPlayers().Count();
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+}
