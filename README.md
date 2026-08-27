@@ -5,10 +5,9 @@
 </div>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/build-passing-brightgreen" alt="Build Status">
-  <img src="https://img.shields.io/github/downloads/SyntX34/CS2-SwiftlyS2-DiscordUtilities/total" alt="Downloads">
-  <img src="https://img.shields.io/github/stars/SyntX34/CS2-SwiftlyS2-DiscordUtilities?style=flat&logo=github" alt="Stars">
-  <img src="https://img.shields.io/github/license/SyntX34/CS2-SwiftlyS2-DiscordUtilities" alt="License">
+  <a href="https://github.com/SyntX34/CS2-SwiftlyS2-DiscordUtilities/releases"><img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version"></a>
+  <a href="https://github.com/swiftly-solution/swiftlys2"><img src="https://img.shields.io/badge/framework-SwiftlyS2-orange.svg" alt="Framework"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
 </p>
 
 ## Features
@@ -29,7 +28,9 @@
 Rich embed notification sent automatically whenever the server changes map. Automatically fetches and displays the official Steam Workshop thumbnail or fallback banner, along with server connection info, workshop ID, and player statistics.
 
 <p align="center">
-  <img src="readme/images/map_notification.png" alt="Map Notification Preview" width="650">
+  <a href="readme/images/map_notification.png" target="_blank">
+    <img src="readme/images/map_notification.png" alt="Map Notification Preview" width="650">
+  </a>
 </p>
 </details>
 
@@ -40,7 +41,9 @@ Rich embed notification sent automatically whenever the server changes map. Auto
 Live server chat relayed straight to Discord using player Steam profile avatars and formatted names. Features per-player cooldown protection and configurable command filtering to keep chat clean.
 
 <p align="center">
-  <img src="readme/images/relay.png" alt="Chat Relay Preview" width="650">
+  <a href="readme/images/relay.png" target="_blank">
+    <img src="readme/images/relay.png" alt="Chat Relay Preview" width="650">
+  </a>
 </p>
 </details>
 
@@ -51,7 +54,9 @@ Live server chat relayed straight to Discord using player Steam profile avatars 
 Comprehensive administrative logging that captures moderation actions (bans, kicks, mutes, slaps), map switching, ConVar modifications, and RCON executions with color-coded embed alerts and execution details.
 
 <p align="center">
-  <img src="readme/images/admin_logs.png" alt="Admin Logs Preview" width="650">
+  <a href="readme/images/admin_logs.png" target="_blank">
+    <img src="readme/images/admin_logs.png" alt="Admin Logs Preview" width="650">
+  </a>
 </p>
 </details>
 
