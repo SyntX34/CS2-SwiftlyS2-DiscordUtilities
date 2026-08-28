@@ -12,42 +12,216 @@ public sealed class SteamApiService : IDisposable
 
     private readonly ConcurrentDictionary<ulong, string> _avatarCache = new();
     private readonly ConcurrentDictionary<ulong, WorkshopMapInfo?> _workshopCache = new();
-    private readonly ConcurrentDictionary<string, bool> _standardMapCheckCache = new();
+    private readonly ConcurrentDictionary<string, string?> _mapImageResolvedCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, List<string>> _vauffMapLists = new();
+    private long _vauffLastUpdated = 0;
+    private bool _vauffListFetched = false;
 
     public SteamApiService(ILogger logger)
     {
         _logger = logger;
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "DiscordUtilities-SwiftlyS2/1.0");
+
+        _ = Task.Run(RefreshVauffMapListAsync);
     }
 
     public void SetApiKey(string apiKey) => _apiKey = apiKey;
 
-    public void ClearCaches() => _avatarCache.Clear();
-
-    public async Task<string?> GetStandardMapImageAsync(string mapName)
+    public void ClearCaches()
     {
-        if (string.IsNullOrWhiteSpace(mapName)) return null;
+        _avatarCache.Clear();
+        _mapImageResolvedCache.Clear();
+    }
 
-        var url = $"https://vauff.com/mapimgs/730_cs2/{mapName}.jpg";
-
-        if (_standardMapCheckCache.TryGetValue(mapName, out var exists))
+    public async Task RefreshVauffMapListAsync()
+    {
+        try
         {
-            return exists ? url : null;
+            var response = await _httpClient.GetStringAsync("https://vauff.com/mapimgs/list.php");
+            using var doc = JsonDocument.Parse(response);
+
+            if (doc.RootElement.TryGetProperty("lastUpdated", out var lastUpdatedElem) &&
+                lastUpdatedElem.TryGetInt64(out var lastUpdated))
+            {
+                if (lastUpdated <= _vauffLastUpdated && _vauffListFetched)
+                    return;
+                _vauffLastUpdated = lastUpdated;
+            }
+
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (prop.NameEquals("lastUpdated") || prop.Value.ValueKind != JsonValueKind.Array)
+                    continue;
+
+                var list = new List<string>();
+                foreach (var item in prop.Value.EnumerateArray())
+                {
+                    var map = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(map))
+                        list.Add(map);
+                }
+
+                _vauffMapLists[prop.Name] = list;
+            }
+
+            _vauffListFetched = true;
+            _logger.LogInformation("[DiscordUtilities] Loaded map image database from vauff.com successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[DiscordUtilities] Could not pre-fetch vauff.com map list (will fall back to direct checks)");
+        }
+    }
+
+    public async Task<string?> GetMapImageAsync(string cleanMapName, ulong? workshopId = null)
+    {
+        if (string.IsNullOrWhiteSpace(cleanMapName))
+            return null;
+
+        var cacheKey = workshopId.HasValue && workshopId.Value > 0 
+            ? $"ws_{workshopId.Value}_{cleanMapName}" 
+            : cleanMapName;
+
+        if (_mapImageResolvedCache.TryGetValue(cacheKey, out var cachedUrl))
+            return cachedUrl;
+
+        // 1. If workshop map ID is present, try Steam Workshop preview image first
+        if (workshopId.HasValue && workshopId.Value > 0)
+        {
+            var wsInfo = await GetWorkshopMapInfoAsync(workshopId.Value);
+            if (!string.IsNullOrWhiteSpace(wsInfo?.PreviewUrl))
+            {
+                _mapImageResolvedCache[cacheKey] = wsInfo.PreviewUrl;
+                return wsInfo.PreviewUrl;
+            }
         }
 
+        // Ensure vauff list is available
+        if (!_vauffListFetched)
+        {
+            await RefreshVauffMapListAsync();
+        }
+
+        var mapLower = cleanMapName.ToLowerInvariant();
+
+        // 2. Check vauff.com 730_cs2 database
+        var cs2Match = FindBestVauffMatch("730_cs2", mapLower);
+        if (!string.IsNullOrWhiteSpace(cs2Match))
+        {
+            var url = $"https://vauff.com/mapimgs/730_cs2/{Uri.EscapeDataString(cs2Match)}.jpg";
+            _mapImageResolvedCache[cacheKey] = url;
+            return url;
+        }
+
+        // 3. Check vauff.com 730_csgo database (for ported / legacy CS:GO/CS2 maps)
+        var csgoMatch = FindBestVauffMatch("730_csgo", mapLower);
+        if (!string.IsNullOrWhiteSpace(csgoMatch))
+        {
+            var url = $"https://vauff.com/mapimgs/730_csgo/{Uri.EscapeDataString(csgoMatch)}.jpg";
+            _mapImageResolvedCache[cacheKey] = url;
+            return url;
+        }
+
+        // 4. Try direct HEAD check on vauff 730_cs2 & 730_csgo directly as fallback
+        var directCs2 = $"https://vauff.com/mapimgs/730_cs2/{Uri.EscapeDataString(mapLower)}.jpg";
+        if (await CheckUrlExistsAsync(directCs2))
+        {
+            _mapImageResolvedCache[cacheKey] = directCs2;
+            return directCs2;
+        }
+
+        var directCsgo = $"https://vauff.com/mapimgs/730_csgo/{Uri.EscapeDataString(mapLower)}.jpg";
+        if (await CheckUrlExistsAsync(directCsgo))
+        {
+            _mapImageResolvedCache[cacheKey] = directCsgo;
+            return directCsgo;
+        }
+
+        // 5. Fall back to GameTracker CS:GO repository
+        var gtUrl = $"https://image.gametracker.com/images/maps/160x120/csgo/{Uri.EscapeDataString(mapLower)}.jpg";
+        if (await CheckUrlExistsAsync(gtUrl))
+        {
+            _mapImageResolvedCache[cacheKey] = gtUrl;
+            return gtUrl;
+        }
+
+        _mapImageResolvedCache[cacheKey] = null;
+        return null;
+    }
+
+    private string? FindBestVauffMatch(string category, string mapLower)
+    {
+        if (!_vauffMapLists.TryGetValue(category, out var mapList) || mapList.Count == 0)
+            return null;
+
+        // Exact match
+        var exact = mapList.FirstOrDefault(m => string.Equals(m, mapLower, StringComparison.OrdinalIgnoreCase));
+        if (exact != null)
+            return exact;
+
+        // Substring / Prefix match with 31 char limit (standard Source map limit accommodation like Maunz)
+        var trimmed = mapLower.Length > 31 ? mapLower[..31] : mapLower;
+        string? bestMatch = null;
+        var minDistance = int.MaxValue;
+
+        foreach (var candidate in mapList)
+        {
+            var candLower = candidate.ToLowerInvariant();
+            if (trimmed.StartsWith(candLower, StringComparison.OrdinalIgnoreCase) ||
+                candLower.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                mapLower.Contains(candLower, StringComparison.OrdinalIgnoreCase))
+            {
+                var distance = ComputeLevenshtein(trimmed, candLower);
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    bestMatch = candidate;
+                }
+            }
+        }
+
+        return bestMatch;
+    }
+
+    private static int ComputeLevenshtein(string s, string t)
+    {
+        var n = s.Length;
+        var m = t.Length;
+        var d = new int[n + 1, m + 1];
+
+        if (n == 0) return m;
+        if (m == 0) return n;
+
+        for (var i = 0; i <= n; d[i, 0] = i++) { }
+        for (var j = 0; j <= m; d[0, j] = j++) { }
+
+        for (var i = 1; i <= n; i++)
+        {
+            for (var j = 1; j <= m; j++)
+            {
+                var cost = (t[j - 1] == s[i - 1]) ? 0 : 1;
+                d[i, j] = Math.Min(
+                    Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                    d[i - 1, j - 1] + cost);
+            }
+        }
+
+        return d[n, m];
+    }
+
+    private async Task<bool> CheckUrlExistsAsync(string url)
+    {
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Head, url);
-            var response = await _httpClient.SendAsync(req);
-            var ok = response.IsSuccessStatusCode;
-            _standardMapCheckCache[mapName] = ok;
-            return ok ? url : null;
+            var res = await _httpClient.SendAsync(req);
+            return res.IsSuccessStatusCode;
         }
         catch
         {
-            _standardMapCheckCache[mapName] = false;
-            return null;
+            return false;
         }
     }
 
@@ -92,11 +266,11 @@ public sealed class SteamApiService : IDisposable
 
         try
         {
-            var content = new FormUrlEncodedContent(new[]
-            {
+            var content = new FormUrlEncodedContent(
+            [
                 new KeyValuePair<string, string>("itemcount", "1"),
                 new KeyValuePair<string, string>("publishedfileids[0]", workshopId.ToString())
-            });
+            ]);
 
             var response = await _httpClient.PostAsync(
                 "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/", content);
@@ -159,3 +333,4 @@ public sealed class WorkshopMapInfo
     public string Description { get; set; } = "";
     public string WorkshopUrl => $"https://steamcommunity.com/sharedfiles/filedetails/?id={WorkshopId}";
 }
+

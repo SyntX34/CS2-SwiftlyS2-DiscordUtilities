@@ -107,20 +107,19 @@ public partial class DiscordUtilities
                     embed.Url = workshopInfo.WorkshopUrl;
                     embed.AddField("Map Name", $"`{cleanMapName}`", true);
                     embed.AddField("Workshop ID", $"[{workshopId}]({workshopInfo.WorkshopUrl})", true);
-
-                    if (!string.IsNullOrWhiteSpace(workshopInfo.PreviewUrl))
-                        mapImageUrl = workshopInfo.PreviewUrl;
                 }
                 else
                 {
                     embed.AddField("Map Name", $"`{cleanMapName}`", true);
                     embed.AddField("Workshop ID", workshopId.ToString(), true);
                 }
+
+                mapImageUrl = await SteamApi.GetMapImageAsync(cleanMapName, workshopId);
             }
             else
             {
                 embed.AddField("Current Map", $"`{cleanMapName}`", true);
-                mapImageUrl = await SteamApi.GetStandardMapImageAsync(cleanMapName);
+                mapImageUrl = await SteamApi.GetMapImageAsync(cleanMapName, isWorkshop ? workshopId : null);
             }
 
             if (config.ShowPlayerCount)
