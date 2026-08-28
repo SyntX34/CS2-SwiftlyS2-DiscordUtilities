@@ -63,12 +63,36 @@ public sealed class DiscordBotService : IDisposable
                     do
                     {
                         result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(receiveBuffer), ct);
-                        ms.Write(receiveBuffer, 0, result.Count);
+
+                        if (result.MessageType == WebSocketMessageType.Close)
+                        {
+                            _logger.LogInformation("[DiscordUtilities] Discord Gateway received close frame: {Status} ({Desc})", result.CloseStatus, result.CloseStatusDescription);
+                            try
+                            {
+                                await _webSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closing", ct);
+                            }
+                            catch { }
+                            break;
+                        }
+
+                        if (result.Count > 0)
+                        {
+                            ms.Write(receiveBuffer, 0, result.Count);
+                        }
                     } while (!result.EndOfMessage);
+
+                    if (result.MessageType == WebSocketMessageType.Close)
+                        break;
+
+                    if (ms.Length == 0)
+                        continue;
 
                     ms.Seek(0, SeekOrigin.Begin);
                     using var reader = new StreamReader(ms, Encoding.UTF8);
                     var rawJson = await reader.ReadToEndAsync(ct);
+
+                    if (string.IsNullOrWhiteSpace(rawJson))
+                        continue;
 
                     await HandleGatewayMessageAsync(rawJson, botToken, channelId, ct);
                 }
@@ -87,6 +111,9 @@ public sealed class DiscordBotService : IDisposable
 
     private async Task HandleGatewayMessageAsync(string rawJson, string botToken, string channelId, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(rawJson))
+            return;
+
         using var doc = JsonDocument.Parse(rawJson);
         var root = doc.RootElement;
 
