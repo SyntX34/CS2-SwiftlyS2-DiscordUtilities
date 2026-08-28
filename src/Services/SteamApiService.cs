@@ -106,45 +106,66 @@ public sealed class SteamApiService : IDisposable
 
         var mapLower = cleanMapName.ToLowerInvariant();
 
-        // 2. Check vauff.com 730_cs2 database
-        var cs2Match = FindBestVauffMatch("730_cs2", mapLower);
-        if (!string.IsNullOrWhiteSpace(cs2Match))
+        // Check all relevant Source game categories on vauff.com
+        string[] vauffCategories = ["730_cs2", "730_csgo", "240", "4000", "440", "550", "10"];
+        foreach (var category in vauffCategories)
         {
-            var url = $"https://vauff.com/mapimgs/730_cs2/{Uri.EscapeDataString(cs2Match)}.jpg";
-            _mapImageResolvedCache[cacheKey] = url;
-            return url;
+            var match = FindBestVauffMatch(category, mapLower);
+            if (!string.IsNullOrWhiteSpace(match))
+            {
+                var url = $"https://vauff.com/mapimgs/{category}/{Uri.EscapeDataString(match)}.jpg";
+                _mapImageResolvedCache[cacheKey] = url;
+                return url;
+            }
         }
 
-        // 3. Check vauff.com 730_csgo database (for ported / legacy CS:GO/CS2 maps)
-        var csgoMatch = FindBestVauffMatch("730_csgo", mapLower);
-        if (!string.IsNullOrWhiteSpace(csgoMatch))
+        // Direct HEAD checks across categories for exact map filename
+        foreach (var category in vauffCategories)
         {
-            var url = $"https://vauff.com/mapimgs/730_csgo/{Uri.EscapeDataString(csgoMatch)}.jpg";
-            _mapImageResolvedCache[cacheKey] = url;
-            return url;
+            var directUrl = $"https://vauff.com/mapimgs/{category}/{Uri.EscapeDataString(mapLower)}.jpg";
+            if (await CheckUrlExistsAsync(directUrl))
+            {
+                _mapImageResolvedCache[cacheKey] = directUrl;
+                return directUrl;
+            }
         }
 
-        // 4. Try direct HEAD check on vauff 730_cs2 & 730_csgo directly as fallback
-        var directCs2 = $"https://vauff.com/mapimgs/730_cs2/{Uri.EscapeDataString(mapLower)}.jpg";
-        if (await CheckUrlExistsAsync(directCs2))
+        // GameTracker fallback checks across CSS, CS:GO, CS, TF2, GMOD
+        string[] gtGames = ["css", "csgo", "cs", "garrysmod", "tf2", "left4dead2"];
+        foreach (var game in gtGames)
         {
-            _mapImageResolvedCache[cacheKey] = directCs2;
-            return directCs2;
+            var gtUrl = $"https://image.gametracker.com/images/maps/160x120/{game}/{Uri.EscapeDataString(mapLower)}.jpg";
+            if (await CheckUrlExistsAsync(gtUrl))
+            {
+                _mapImageResolvedCache[cacheKey] = gtUrl;
+                return gtUrl;
+            }
         }
 
-        var directCsgo = $"https://vauff.com/mapimgs/730_csgo/{Uri.EscapeDataString(mapLower)}.jpg";
-        if (await CheckUrlExistsAsync(directCsgo))
+        // Try stripping standard suffixes (_v1, _v2, _fix, _cs2, _b1, _rc1, etc.) for fallback
+        var baseMapName = System.Text.RegularExpressions.Regex.Replace(mapLower, @"(_v\d+[\w]*|_fix[\w]*|_cs2|_beta[\w]*|_b\d+[\w]*|_rc\d+[\w]*)$", "");
+        if (!string.Equals(baseMapName, mapLower, StringComparison.OrdinalIgnoreCase) && baseMapName.Length > 2)
         {
-            _mapImageResolvedCache[cacheKey] = directCsgo;
-            return directCsgo;
-        }
+            foreach (var category in vauffCategories)
+            {
+                var match = FindBestVauffMatch(category, baseMapName);
+                if (!string.IsNullOrWhiteSpace(match))
+                {
+                    var url = $"https://vauff.com/mapimgs/{category}/{Uri.EscapeDataString(match)}.jpg";
+                    _mapImageResolvedCache[cacheKey] = url;
+                    return url;
+                }
+            }
 
-        // 5. Fall back to GameTracker CS:GO repository
-        var gtUrl = $"https://image.gametracker.com/images/maps/160x120/csgo/{Uri.EscapeDataString(mapLower)}.jpg";
-        if (await CheckUrlExistsAsync(gtUrl))
-        {
-            _mapImageResolvedCache[cacheKey] = gtUrl;
-            return gtUrl;
+            foreach (var game in gtGames)
+            {
+                var gtUrl = $"https://image.gametracker.com/images/maps/160x120/{game}/{Uri.EscapeDataString(baseMapName)}.jpg";
+                if (await CheckUrlExistsAsync(gtUrl))
+                {
+                    _mapImageResolvedCache[cacheKey] = gtUrl;
+                    return gtUrl;
+                }
+            }
         }
 
         _mapImageResolvedCache[cacheKey] = null;
