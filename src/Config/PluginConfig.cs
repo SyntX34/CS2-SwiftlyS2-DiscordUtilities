@@ -2,6 +2,7 @@ namespace DiscordUtilities.Config;
 
 public sealed class PluginConfig
 {
+    public bool Debug { get; set; } = false;
     public string SteamApiKey { get; set; } = "";
     public string ServerName { get; set; } = "";
     public string ServerIP { get; set; } = "";
@@ -32,8 +33,11 @@ public sealed class ChatRelayConfig
     public string WebhookUrl { get; set; } = "";
     public bool UseSteamAvatars { get; set; } = true;
     public string UsernameFormat { get; set; } = "{PlayerName} [{SteamId2}]";
+    public string MessageFormat { get; set; } = "{Message}";
+    public string TeamMessageFormat { get; set; } = "(TEAM) {Message}";
     public int CooldownSeconds { get; set; } = 1;
     public bool IgnoreCommands { get; set; } = true;
+    public List<string> IgnoredPrefixes { get; set; } = ["!", "/", "rtv", "nominate", "nextmap", "timeleft", "currentmap"];
     public bool IgnoreTeamChat { get; set; } = false;
 }
 

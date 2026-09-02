@@ -10,16 +10,18 @@ public sealed class DiscordBotService : IDisposable
 {
     private readonly ILogger _logger;
     private readonly Action<string, string> _onMessageReceived;
+    private readonly Func<bool> _isDebugEnabled;
     private ClientWebSocket? _webSocket;
     private CancellationTokenSource? _cts;
     private int _heartbeatIntervalMs = 41250;
     private int? _lastSequence;
     private bool _disposed;
 
-    public DiscordBotService(ILogger logger, Action<string, string> onMessageReceived)
+    public DiscordBotService(ILogger logger, Action<string, string> onMessageReceived, Func<bool>? isDebugEnabled = null)
     {
         _logger = logger;
         _onMessageReceived = onMessageReceived;
+        _isDebugEnabled = isDebugEnabled ?? (() => false);
     }
 
     public void Start(string botToken, string channelId)
@@ -52,7 +54,8 @@ public sealed class DiscordBotService : IDisposable
             {
                 _webSocket = new ClientWebSocket();
                 await _webSocket.ConnectAsync(new Uri("wss://gateway.discord.gg/?v=10&encoding=json"), ct);
-                _logger.LogInformation("[DiscordUtilities] Connected to Discord Gateway");
+                if (_isDebugEnabled())
+                    _logger.LogInformation("[DiscordUtilities] Connected to Discord Gateway");
 
                 var receiveBuffer = new byte[8192];
 
@@ -66,7 +69,8 @@ public sealed class DiscordBotService : IDisposable
 
                         if (result.MessageType == WebSocketMessageType.Close)
                         {
-                            _logger.LogInformation("[DiscordUtilities] Discord Gateway received close frame: {Status} ({Desc})", result.CloseStatus, result.CloseStatusDescription);
+                            if (_isDebugEnabled())
+                                _logger.LogInformation("[DiscordUtilities] Discord Gateway received close frame: {Status} ({Desc})", result.CloseStatus, result.CloseStatusDescription);
                             try
                             {
                                 await _webSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closing", ct);
@@ -103,9 +107,39 @@ public sealed class DiscordBotService : IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[DiscordUtilities] Discord Gateway connection lost. Reconnecting in 5s...");
+                if (_isDebugEnabled())
+                    _logger.LogWarning(ex, "[DiscordUtilities] Discord Gateway connection lost. Reconnecting in 5s...");
                 await Task.Delay(5000, ct);
             }
+        }
+    }
+
+    public static async Task<(bool IsValid, string BotUsername, string ErrorReason)> ValidateBotTokenAsync(string botToken)
+    {
+        if (string.IsNullOrWhiteSpace(botToken))
+            return (false, "", "Bot token is empty");
+
+        try
+        {
+            using var client = new HttpClient();
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://discord.com/api/v10/users/@me");
+            request.Headers.Add("Authorization", $"Bot {botToken.Trim()}");
+            request.Headers.Add("User-Agent", "DiscordUtilities-SwiftlyS2/1.0");
+
+            var res = await client.SendAsync(request);
+            if (res.IsSuccessStatusCode)
+            {
+                var content = await res.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(content);
+                var username = doc.RootElement.TryGetProperty("username", out var u) ? u.GetString() ?? "Bot" : "Bot";
+                return (true, username, "");
+            }
+
+            return (false, "", $"Discord API returned {(int)res.StatusCode} ({res.ReasonPhrase}) - check Bot Token");
+        }
+        catch (Exception ex)
+        {
+            return (false, "", ex.Message);
         }
     }
 
@@ -131,14 +165,38 @@ public sealed class DiscordBotService : IDisposable
                 await IdentifyAsync(botToken, ct);
                 break;
 
+            case 9: // Invalid Session
+                if (_isDebugEnabled())
+                    _logger.LogWarning("[DiscordUtilities] Discord Gateway Session Invalidated (Op 9). Token or Intents might be invalid.");
+                break;
+
             case 0: // Dispatch
                 var t = root.GetProperty("t").GetString();
-                if (t == "MESSAGE_CREATE")
+                if (t == "READY")
+                {
+                    if (_isDebugEnabled())
+                    {
+                        var user = root.GetProperty("d").GetProperty("user");
+                        var botName = user.GetProperty("username").GetString() ?? "Bot";
+                        _logger.LogInformation("[DiscordUtilities] Discord Bot successfully logged in as: {BotName}", botName);
+                    }
+                }
+                else if (t == "MESSAGE_CREATE")
                 {
                     var d = root.GetProperty("d");
                     var msgChannelId = d.GetProperty("channel_id").GetString();
 
-                    if (msgChannelId == channelId)
+                    if (_isDebugEnabled())
+                    {
+                        var author = d.TryGetProperty("author", out var auth) ? auth : default;
+                        var isBot = author.ValueKind != JsonValueKind.Undefined && author.TryGetProperty("bot", out var b) && b.GetBoolean();
+                        var name = author.ValueKind != JsonValueKind.Undefined && author.TryGetProperty("username", out var u) ? u.GetString() ?? "" : "";
+                        var text = d.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
+                        _logger.LogInformation("[DiscordUtilities] [Gateway Event] MESSAGE_CREATE in channel {EventChannel} (Configured: {ConfigChannel}) from {User} (IsBot: {IsBot}): {Text}",
+                            msgChannelId, channelId, name, isBot, text);
+                    }
+
+                    if (string.Equals(msgChannelId, channelId, StringComparison.OrdinalIgnoreCase))
                     {
                         var author = d.GetProperty("author");
                         var isBot = author.TryGetProperty("bot", out var botProp) && botProp.GetBoolean();
@@ -170,10 +228,10 @@ public sealed class DiscordBotService : IDisposable
             d = new
             {
                 token = botToken,
-                intents = 513 | 32768, // GUILDS (1) | GUILD_MESSAGES (512) | MESSAGE_CONTENT (32768)
+                intents = 513 | 32768 | 4096, // GUILDS (1) | GUILD_MESSAGES (512) | MESSAGE_CONTENT (32768) | DIRECT_MESSAGES (4096)
                 properties = new
                 {
-                    os = "windows",
+                    os = "linux",
                     browser = "DiscordUtilities",
                     device = "DiscordUtilities"
                 }

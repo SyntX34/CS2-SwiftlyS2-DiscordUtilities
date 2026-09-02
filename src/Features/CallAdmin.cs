@@ -57,6 +57,13 @@ public partial class DiscordUtilities
                         var player = Core.PlayerManager.GetPlayer(playerId);
                         if (player != null && player.IsValid)
                         {
+                            if (IsCallAdminOnCooldown(player, out var remaining))
+                            {
+                                var msg = Core.Localizer["calladmin.cooldown", remaining];
+                                player.SendChat(msg);
+                                return HookResult.Handled;
+                            }
+
                             if (string.IsNullOrWhiteSpace(args))
                             {
                                 OpenCallAdminTargetMenu(player);
@@ -94,6 +101,13 @@ public partial class DiscordUtilities
                 var player = Core.PlayerManager.GetPlayer(playerId);
                 if (player != null && player.IsValid)
                 {
+                    if (IsCallAdminOnCooldown(player, out var remaining))
+                    {
+                        var msg = Core.Localizer["calladmin.cooldown", remaining];
+                        player.SendChat(msg);
+                        return HookResult.Handled;
+                    }
+
                     if (string.IsNullOrWhiteSpace(args))
                     {
                         OpenCallAdminTargetMenu(player);
@@ -192,9 +206,37 @@ public partial class DiscordUtilities
         Core.MenusAPI.OpenMenuForPlayer(reporter, builder.Build());
     }
 
+    private bool IsCallAdminOnCooldown(IPlayer player, out int remainingSeconds)
+    {
+        remainingSeconds = 0;
+        if (!player.IsValid) return false;
+
+        var config = Config.CallAdmin;
+        if (config.CooldownSeconds <= 0 || player.SteamID == 0) return false;
+
+        if (_callAdminCooldowns.TryGetValue(player.SteamID, out var lastCall))
+        {
+            var elapsed = (DateTime.UtcNow - lastCall).TotalSeconds;
+            if (elapsed < config.CooldownSeconds)
+            {
+                remainingSeconds = (int)Math.Ceiling(config.CooldownSeconds - elapsed);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private void OpenCallAdminReasonMenu(IPlayer reporter, string targetName, ulong targetSteamId)
     {
         if (!reporter.IsValid) return;
+
+        if (IsCallAdminOnCooldown(reporter, out var rem))
+        {
+            var msg = Core.Localizer["calladmin.cooldown", rem];
+            reporter.SendChat(msg);
+            return;
+        }
 
         if (_preconfiguredCallAdminReasons.Count == 0)
         {
@@ -213,6 +255,13 @@ public partial class DiscordUtilities
             {
                 await Core.Scheduler.NextTickAsync(() =>
                 {
+                    if (IsCallAdminOnCooldown(args.Player, out var remaining))
+                    {
+                        var msg = Core.Localizer["calladmin.cooldown", remaining];
+                        args.Player.SendChat(msg);
+                        return;
+                    }
+
                     if (capturedReason.Title.Contains("Other", StringComparison.OrdinalIgnoreCase) ||
                         capturedReason.Title.Contains("Custom", StringComparison.OrdinalIgnoreCase))
                     {
@@ -278,23 +327,25 @@ public partial class DiscordUtilities
             var reporterName = reporter.Name;
 
             // Check Cooldown
-            if (config.CooldownSeconds > 0 && reporterSteamId != 0)
+            if (IsCallAdminOnCooldown(reporter, out var remainingSec))
             {
-                var now = DateTime.UtcNow;
-                if (_callAdminCooldowns.TryGetValue(reporterSteamId, out var lastCall) &&
-                    (now - lastCall).TotalSeconds < config.CooldownSeconds)
+                var msg = Core.Localizer["calladmin.cooldown", remainingSec];
+                Core.Scheduler.NextTick(() =>
                 {
-                    var remaining = (int)(config.CooldownSeconds - (now - lastCall).TotalSeconds);
-                    var msg = Core.Localizer["calladmin.cooldown", remaining];
-                    reporter.SendChat(msg);
-                    return;
-                }
+                    if (reporter.IsValid)
+                        reporter.SendChat(msg);
+                });
+                return;
             }
 
             if (reason.Length < config.MinimumReasonLength)
             {
                 var msg = Core.Localizer["calladmin.reason_too_short", config.MinimumReasonLength];
-                reporter.SendChat(msg);
+                Core.Scheduler.NextTick(() =>
+                {
+                    if (reporter.IsValid)
+                        reporter.SendChat(msg);
+                });
                 return;
             }
 
@@ -403,7 +454,11 @@ public partial class DiscordUtilities
                 components: components);
 
             var sentMsg = Core.Localizer["calladmin.sent", config.CooldownSeconds];
-            reporter.SendChat(sentMsg);
+            Core.Scheduler.NextTick(() =>
+            {
+                if (reporter.IsValid)
+                    reporter.SendChat(sentMsg);
+            });
             Core.Logger.LogInformation("[DiscordUtilities] CallAdmin Report #{ReportId} sent by {Reporter} against {Target} for: {Reason}",
                 reportId, reporterName, targetName, reason);
         }

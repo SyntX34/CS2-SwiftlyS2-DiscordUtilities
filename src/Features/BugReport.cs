@@ -57,6 +57,13 @@ public partial class DiscordUtilities
                         var player = Core.PlayerManager.GetPlayer(playerId);
                         if (player != null && player.IsValid)
                         {
+                            if (IsBugReportOnCooldown(player, out var remaining))
+                            {
+                                var msg = Core.Localizer["bugreport.cooldown", remaining];
+                                player.SendChat(msg);
+                                return HookResult.Handled;
+                            }
+
                             if (string.IsNullOrWhiteSpace(args))
                             {
                                 OpenBugReportMenu(player);
@@ -94,6 +101,13 @@ public partial class DiscordUtilities
                 var player = Core.PlayerManager.GetPlayer(playerId);
                 if (player != null && player.IsValid)
                 {
+                    if (IsBugReportOnCooldown(player, out var remaining))
+                    {
+                        var msg = Core.Localizer["bugreport.cooldown", remaining];
+                        player.SendChat(msg);
+                        return HookResult.Handled;
+                    }
+
                     if (string.IsNullOrWhiteSpace(args))
                     {
                         OpenBugReportMenu(player);
@@ -110,6 +124,27 @@ public partial class DiscordUtilities
         });
 
         Core.Logger.LogInformation("[DiscordUtilities] BugReport registered for !bug, !bugreport, and console commands with Menu system");
+    }
+
+    private bool IsBugReportOnCooldown(IPlayer player, out int remainingSeconds)
+    {
+        remainingSeconds = 0;
+        if (!player.IsValid) return false;
+
+        var config = Config.BugReport;
+        if (config.CooldownSeconds <= 0 || player.SteamID == 0) return false;
+
+        if (_bugReportCooldowns.TryGetValue(player.SteamID, out var lastCall))
+        {
+            var elapsed = (DateTime.UtcNow - lastCall).TotalSeconds;
+            if (elapsed < config.CooldownSeconds)
+            {
+                remainingSeconds = (int)Math.Ceiling(config.CooldownSeconds - elapsed);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void LoadBugReportReasons()
@@ -156,6 +191,13 @@ public partial class DiscordUtilities
     {
         if (!player.IsValid) return;
 
+        if (IsBugReportOnCooldown(player, out var rem))
+        {
+            var msg = Core.Localizer["bugreport.cooldown", rem];
+            player.SendChat(msg);
+            return;
+        }
+
         var config = Config.BugReport;
         var menuTitle = string.IsNullOrWhiteSpace(config.MenuTitle) ? "Report a Bug / Issue" : config.MenuTitle;
         var builder = Core.MenusAPI.CreateBuilder().Design.SetMenuTitle(menuTitle);
@@ -174,6 +216,13 @@ public partial class DiscordUtilities
             {
                 await Core.Scheduler.NextTickAsync(() =>
                 {
+                    if (IsBugReportOnCooldown(args.Player, out var remaining))
+                    {
+                        var msg = Core.Localizer["bugreport.cooldown", remaining];
+                        args.Player.SendChat(msg);
+                        return;
+                    }
+
                     if (capturedItem.Title.Contains("Other", StringComparison.OrdinalIgnoreCase) ||
                         capturedItem.Title.Contains("Custom", StringComparison.OrdinalIgnoreCase))
                     {
@@ -208,23 +257,25 @@ public partial class DiscordUtilities
             var reporterName = reporter.Name;
 
             // Check Cooldown
-            if (config.CooldownSeconds > 0 && reporterSteamId != 0)
+            if (IsBugReportOnCooldown(reporter, out var remainingSec))
             {
-                var now = DateTime.UtcNow;
-                if (_bugReportCooldowns.TryGetValue(reporterSteamId, out var lastCall) &&
-                    (now - lastCall).TotalSeconds < config.CooldownSeconds)
+                var msg = Core.Localizer["bugreport.cooldown", remainingSec];
+                Core.Scheduler.NextTick(() =>
                 {
-                    var remaining = (int)(config.CooldownSeconds - (now - lastCall).TotalSeconds);
-                    var msg = Core.Localizer["bugreport.cooldown", remaining];
-                    reporter.SendChat(msg);
-                    return;
-                }
+                    if (reporter.IsValid)
+                        reporter.SendChat(msg);
+                });
+                return;
             }
 
             if (reason.Length < config.MinimumReasonLength)
             {
                 var msg = Core.Localizer["bugreport.reason_too_short", config.MinimumReasonLength];
-                reporter.SendChat(msg);
+                Core.Scheduler.NextTick(() =>
+                {
+                    if (reporter.IsValid)
+                        reporter.SendChat(msg);
+                });
                 return;
             }
 
@@ -323,7 +374,11 @@ public partial class DiscordUtilities
                 components: components);
 
             var sentMsg = Core.Localizer["bugreport.sent", config.CooldownSeconds];
-            reporter.SendChat(sentMsg);
+            Core.Scheduler.NextTick(() =>
+            {
+                if (reporter.IsValid)
+                    reporter.SendChat(sentMsg);
+            });
             Core.Logger.LogInformation("[DiscordUtilities] BugReport #{ReportId} sent by {Reporter} on map {Map}: {Reason}",
                 reportId, reporterName, cleanMap, reason);
         }

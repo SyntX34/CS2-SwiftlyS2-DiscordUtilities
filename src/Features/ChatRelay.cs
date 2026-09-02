@@ -43,7 +43,23 @@ public partial class DiscordUtilities
 
             if (string.IsNullOrWhiteSpace(text)) return;
             if (teamOnly && config.IgnoreTeamChat) return;
-            if (config.IgnoreCommands && (text.StartsWith('!') || text.StartsWith('/'))) return;
+
+            var trimmedText = text.Trim();
+            if (config.IgnoreCommands)
+            {
+                if (trimmedText.StartsWith('!') || trimmedText.StartsWith('/'))
+                    return;
+
+                if (config.IgnoredPrefixes != null && config.IgnoredPrefixes.Count > 0)
+                {
+                    foreach (var prefix in config.IgnoredPrefixes)
+                    {
+                        if (string.IsNullOrWhiteSpace(prefix)) continue;
+                        if (trimmedText.StartsWith(prefix.Trim(), StringComparison.OrdinalIgnoreCase))
+                            return;
+                    }
+                }
+            }
 
             var player = Core.PlayerManager.GetPlayer(playerId);
             var playerName = player?.Name ?? $"Player #{playerId}";
@@ -71,10 +87,20 @@ public partial class DiscordUtilities
                 .Replace("{SteamId64}", steamId64.ToString())
                 .Replace("{Team}", teamOnly ? "[TEAM]" : "");
 
-            // Send clean Discord message (no embed banner, pure webhook format like screenshot)
+            var format = teamOnly 
+                ? (string.IsNullOrWhiteSpace(config.TeamMessageFormat) ? "(TEAM) {Message}" : config.TeamMessageFormat)
+                : (string.IsNullOrWhiteSpace(config.MessageFormat) ? "{Message}" : config.MessageFormat);
+
+            var formattedMessage = format
+                .Replace("{PlayerName}", playerName)
+                .Replace("{SteamId2}", steamId2)
+                .Replace("{SteamId64}", steamId64.ToString())
+                .Replace("{Message}", text);
+
+            // Send clean Discord message (no embed banner, pure webhook format)
             await Webhook.SendMessageAsync(
                 config.WebhookUrl,
-                content: text,
+                content: formattedMessage,
                 username: webhookUsername,
                 avatarUrl: avatarUrl);
         }

@@ -11,7 +11,7 @@ namespace DiscordUtilities;
 
 [PluginMetadata(
     Id = "DiscordUtilities",
-    Version = "1.1.0",
+    Version = "1.1.1",
     Name = "Discord Utilities",
     Author = "SyntX34",
     Description = "Discord integration for CS2: map notifications, chat relay, admin logs, calladmin, bugreport.")]
@@ -60,9 +60,10 @@ public partial class DiscordUtilities : BasePlugin
             !string.IsNullOrWhiteSpace(Config.DiscordToServer.ChannelId))
         {
             DiscordBot?.Dispose();
-            DiscordBot = new DiscordBotService(Core.Logger, OnDiscordMessageReceived);
+            DiscordBot = new DiscordBotService(Core.Logger, OnDiscordMessageReceived, () => Config.Debug);
             DiscordBot.Start(Config.DiscordToServer.BotToken, Config.DiscordToServer.ChannelId);
-            Core.Logger.LogInformation("[DiscordUtilities] DiscordToServer bot service started for channel {Channel}", Config.DiscordToServer.ChannelId);
+            if (Config.Debug)
+                Core.Logger.LogInformation("[DiscordUtilities] DiscordToServer bot service started for channel {Channel}", Config.DiscordToServer.ChannelId);
         }
         else
         {
@@ -80,7 +81,21 @@ public partial class DiscordUtilities : BasePlugin
                 .Replace("{DiscordName}", authorName)
                 .Replace("{Message}", message);
 
-            Core.PlayerManager.SendChatAsync(formatted);
+            Core.Scheduler.NextTick(() =>
+            {
+                try
+                {
+                    Core.PlayerManager.SendChat(formatted);
+                }
+                catch
+                {
+                    foreach (var p in Core.PlayerManager.GetAllValidPlayers())
+                    {
+                        if (p.IsValid)
+                            p.SendChat(formatted);
+                    }
+                }
+            });
         }
         catch (Exception ex)
         {
@@ -204,7 +219,23 @@ public partial class DiscordUtilities : BasePlugin
         if (Config.DiscordToServer.Enabled)
         {
             if (string.IsNullOrWhiteSpace(Config.DiscordToServer.BotToken))
+            {
                 Core.Logger.LogWarning("[DiscordUtilities] DiscordToServer is enabled but BotToken is missing!");
+            }
+            else
+            {
+                var (isValid, botName, error) = await DiscordBotService.ValidateBotTokenAsync(Config.DiscordToServer.BotToken);
+                if (isValid)
+                {
+                    if (Config.Debug)
+                        Core.Logger.LogInformation("[DiscordUtilities] Discord Bot Token verified successfully (Bot: {BotName})", botName);
+                }
+                else
+                {
+                    Core.Logger.LogWarning("[DiscordUtilities] Discord Bot Token validation failed: {Reason}", error);
+                }
+            }
+
             if (string.IsNullOrWhiteSpace(Config.DiscordToServer.ChannelId))
                 Core.Logger.LogWarning("[DiscordUtilities] DiscordToServer is enabled but ChannelId is missing!");
         }
