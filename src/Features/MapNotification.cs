@@ -96,11 +96,24 @@ public partial class DiscordUtilities
             embed.WithTimestamp();
 
             string? mapImageUrl = null;
+            WorkshopMapInfo? workshopInfo = null;
+
+            if (isWorkshop)
+            {
+                workshopInfo = await SteamApi.GetWorkshopMapInfoAsync(workshopId);
+            }
+            else
+            {
+                workshopInfo = await SteamApi.SearchWorkshopMapByNameAsync(cleanMapName);
+                if (workshopInfo != null && workshopInfo.WorkshopId > 0)
+                {
+                    isWorkshop = true;
+                    workshopId = workshopInfo.WorkshopId;
+                }
+            }
 
             if (isWorkshop && config.ShowWorkshopId)
             {
-                var workshopInfo = await SteamApi.GetWorkshopMapInfoAsync(workshopId);
-
                 if (workshopInfo != null)
                 {
                     embed.Title = isExtension ? $"⏳ Map Extended: **{workshopInfo.Title}**" : $"🗺️ Map: **{workshopInfo.Title}**";
@@ -153,8 +166,10 @@ public partial class DiscordUtilities
                 embed.Image = new EmbedImage { Url = mapImageUrl };
             }
 
-            // Link Button Component (Connect Now)
+            // Action Row Buttons (Connect Now & Steam Workshop Link)
             List<DiscordComponentActionRow>? components = null;
+            var buttons = new List<DiscordComponentButton>();
+
             if (!string.IsNullOrWhiteSpace(connectAddress))
             {
                 string buttonUrl;
@@ -169,19 +184,32 @@ public partial class DiscordUtilities
                     buttonUrl = $"https://vauff.com/connect.php?ip={target}";
                 }
 
+                buttons.Add(new DiscordComponentButton
+                {
+                    Label = "Connect Now",
+                    Url = buttonUrl,
+                    Emoji = new DiscordEmoji { Name = "🎮" }
+                });
+            }
+
+            if (isWorkshop && workshopId > 0 && config.ShowWorkshopId)
+            {
+                var wsUrl = workshopInfo?.WorkshopUrl ?? $"https://steamcommunity.com/sharedfiles/filedetails/?id={workshopId}";
+                buttons.Add(new DiscordComponentButton
+                {
+                    Label = "Workshop Page",
+                    Url = wsUrl,
+                    Emoji = new DiscordEmoji { Name = "🗺️" }
+                });
+            }
+
+            if (buttons.Count > 0)
+            {
                 components =
                 [
                     new DiscordComponentActionRow
                     {
-                        Components =
-                        [
-                            new DiscordComponentButton
-                            {
-                                Label = "Connect Now",
-                                Url = buttonUrl,
-                                Emoji = new DiscordEmoji { Name = "🎮" }
-                            }
-                        ]
+                        Components = buttons
                     }
                 ];
             }

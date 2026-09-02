@@ -97,6 +97,16 @@ public sealed class SteamApiService : IDisposable
                 return wsInfo.PreviewUrl;
             }
         }
+        else
+        {
+            // Try searching Steam Workshop by map name
+            var wsInfo = await SearchWorkshopMapByNameAsync(cleanMapName);
+            if (!string.IsNullOrWhiteSpace(wsInfo?.PreviewUrl))
+            {
+                _mapImageResolvedCache[cacheKey] = wsInfo.PreviewUrl;
+                return wsInfo.PreviewUrl;
+            }
+        }
 
         // Ensure vauff list is available
         if (!_vauffListFetched)
@@ -275,6 +285,64 @@ public sealed class SteamApiService : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "[DiscordUtilities] Failed to fetch avatar for {SteamId}", steamId64);
+        }
+
+        return null;
+    }
+
+    public async Task<WorkshopMapInfo?> SearchWorkshopMapByNameAsync(string mapName)
+    {
+        if (string.IsNullOrWhiteSpace(mapName))
+            return null;
+
+        var cleanName = mapName;
+        var lastSlash = mapName.LastIndexOfAny(['/', '\\']);
+        if (lastSlash >= 0 && lastSlash < mapName.Length - 1)
+            cleanName = mapName[(lastSlash + 1)..];
+
+        try
+        {
+            var keyParam = !string.IsNullOrWhiteSpace(_apiKey) ? $"&key={_apiKey}" : "";
+            var url = $"https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/?appid=730&search_text={Uri.EscapeDataString(cleanName)}&return_previews=true&return_short_description=true{keyParam}";
+
+            var response = await _httpClient.GetStringAsync(url);
+            using var doc = JsonDocument.Parse(response);
+
+            if (!doc.RootElement.TryGetProperty("response", out var resp) ||
+                !resp.TryGetProperty("publishedfiledetails", out var details) ||
+                details.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            foreach (var item in details.EnumerateArray())
+            {
+                if (!item.TryGetProperty("publishedfileid", out var idProp))
+                    continue;
+
+                var idStr = idProp.GetString() ?? idProp.GetRawText();
+                if (!ulong.TryParse(idStr, out var wsId) || wsId == 0)
+                    continue;
+
+                var title = item.TryGetProperty("title", out var titleProp) ? titleProp.GetString() ?? "" : "";
+                var previewUrl = item.TryGetProperty("preview_url", out var prevProp) ? prevProp.GetString() ?? "" : "";
+                var desc = item.TryGetProperty("short_description", out var descProp) ? descProp.GetString() ?? "" : "";
+
+                var info = new WorkshopMapInfo
+                {
+                    WorkshopId = wsId,
+                    Title = string.IsNullOrWhiteSpace(title) ? cleanName : title,
+                    PreviewUrl = previewUrl,
+                    Description = desc
+                };
+
+                _workshopCache[wsId] = info;
+                return info;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[DiscordUtilities] Steam Workshop Search failed for {MapName}", cleanName);
         }
 
         return null;

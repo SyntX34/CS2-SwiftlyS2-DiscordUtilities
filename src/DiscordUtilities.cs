@@ -11,7 +11,7 @@ namespace DiscordUtilities;
 
 [PluginMetadata(
     Id = "DiscordUtilities",
-    Version = "1.0.1",
+    Version = "1.0.2",
     Name = "Discord Utilities",
     Author = "SyntX34",
     Description = "Discord integration for CS2 — map notifications, chat relay, admin logs.")]
