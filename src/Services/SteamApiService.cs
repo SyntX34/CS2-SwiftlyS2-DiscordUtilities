@@ -97,16 +97,6 @@ public sealed class SteamApiService : IDisposable
                 return wsInfo.PreviewUrl;
             }
         }
-        else
-        {
-            // Try searching Steam Workshop by map name
-            var wsInfo = await SearchWorkshopMapByNameAsync(cleanMapName);
-            if (!string.IsNullOrWhiteSpace(wsInfo?.PreviewUrl))
-            {
-                _mapImageResolvedCache[cacheKey] = wsInfo.PreviewUrl;
-                return wsInfo.PreviewUrl;
-            }
-        }
 
         // Ensure vauff list is available
         if (!_vauffListFetched)

@@ -17,6 +17,8 @@
 | 🗺️ **Map Notifications** | Rich embeds on map change — workshop detection, preview images from Steam API, player count, custom banners | Separate webhook |
 | 💬 **Chat Relay** | Server chat → Discord with player Steam avatars, per-player cooldowns, command filtering | Separate webhook |
 | 🔒 **Admin Logs** | Logs admin commands (ban/kick/mute/slap/map changes/cvar/rcon) with categorized embeds, ignores server console spam | Separate webhook |
+| 🚨 **CallAdmin** | In-game player reporting (`!calladmin`, `!report`, `sw_calladmin`) to Discord with target detection, cooldowns, and role pings | Separate webhook |
+| 🐛 **Bug Report** | In-game bug reporting menu (`!bug`, `!bugreport`) with customizable preconfigured reasons (`bug_reasons.jsonc`) & custom details | Separate webhook |
 | 🔄 **Discord → Server** | *(Phase 2)* Relay Discord messages into the game server — requires bot token | Separate channel |
 
 ### Feature Previews
@@ -56,6 +58,32 @@ Comprehensive administrative logging that captures moderation actions (bans, kic
 <p align="center">
   <a href="readme/images/admin_logs.png" target="_blank">
     <img src="readme/images/admin_logs.png" alt="Admin Logs Preview" width="650">
+  </a>
+</p>
+</details>
+
+<details open>
+<summary><b>🚨 CallAdmin & Player Reports</b></summary>
+<br>
+
+Allows players to call server administrators directly to Discord via `!calladmin` or `!report`. Features an interactive SwiftlyS2 in-game menu to select players and reasons (configured in `calladmin_reasons.jsonc`), cooldown limits, role mentions (`@here` / role IDs), and one-click direct connect links for admins.
+
+<p align="center">
+  <a href="readme/images/calladmin.png" target="_blank">
+    <img src="readme/images/calladmin.png" alt="CallAdmin Preview" width="650">
+  </a>
+</p>
+</details>
+
+<details open>
+<summary><b>🐛 Bug & Issue Reporting</b></summary>
+<br>
+
+In-game reporting system via `!bug` or `!bugreport`. Players can choose from preconfigured bug categories (`bug_reasons.jsonc`) or submit custom issue descriptions with map information and player data dispatched straight to Discord.
+
+<p align="center">
+  <a href="readme/images/bugreport.png" target="_blank">
+    <img src="readme/images/bugreport.png" alt="Bug Report Preview" width="650">
   </a>
 </p>
 </details>
@@ -130,6 +158,28 @@ The plugin uses **JSONC** (JSON with Comments) for configuration, auto-generated
       "LogCvarChanges": true,
       "LogRcon": true,
       "CooldownSeconds": 2
+    },
+
+    "CallAdmin": {
+      "Enabled": true,
+      "WebhookUrl": "https://discord.com/api/webhooks/...",
+      // Mention admin role or user (e.g. "<@&ROLE_ID>" or "@here")
+      "MentionRoleOrUser": "",
+      "BannerUrl": "",
+      "EmbedColor": "#FFA500",
+      "CooldownSeconds": 30,
+      "MinimumReasonLength": 3
+    },
+
+    "BugReport": {
+      "Enabled": true,
+      "WebhookUrl": "https://discord.com/api/webhooks/...",
+      "MentionRoleOrUser": "",
+      "BannerUrl": "",
+      "EmbedColor": "#FFFF00",
+      "MenuTitle": "Report a Bug / Issue",
+      "CooldownSeconds": 30,
+      "MinimumReasonLength": 3
     }
   }
 }
@@ -142,6 +192,10 @@ Each feature uses its own webhook URL, so you can route notifications to differe
 - `#map-updates` — Map notifications
 - `#chat-log` — Chat relay
 - `#admin-log` — Admin actions
+- `#call-admin` — Player reports / CallAdmin alerts
+- `#bug-reports` — Bug & issue reports
+
+
 
 ## Building
 

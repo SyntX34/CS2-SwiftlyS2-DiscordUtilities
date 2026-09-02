@@ -36,3 +36,4 @@ secrets.json
 appsettings.Development.json
 nul
 examples/*
+refrence/*

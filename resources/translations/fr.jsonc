@@ -1,0 +1,15 @@
+{
+  "calladmin.cooldown": "[green][DiscordUtilities][default] Veuillez patienter [gold]{0}s[default] avant d'appeler un administrateur à nouveau.",
+  "calladmin.usage": "[green][DiscordUtilities][default] Utilisation : [gold]!calladmin[default] (ouvre le menu) ou [gold]!calladmin <joueur> <raison>[default]",
+  "calladmin.reason_too_short": "[red][DiscordUtilities][default] Raison trop courte ! Veuillez entrer au moins [gold]{0}[default] caractères.",
+  "calladmin.custom_prompt": "[green][DiscordUtilities][default] Pour signaler avec une raison personnalisée, tapez : [gold]!calladmin {0} <décrivez la raison ici>[default]",
+  "calladmin.no_players": "[red][DiscordUtilities][default] Aucun autre joueur en ligne à signaler.",
+  "calladmin.select_reason": "Sélectionnez la raison du signalement de {0} :",
+  "calladmin.sent": "[green][DiscordUtilities][default] Votre signalement a été envoyé aux administrateurs sur Discord. [gold]({0}s de délai d'attente appliqué)[default]",
+
+  "bugreport.cooldown": "[green][DiscordUtilities][default] Veuillez patienter [gold]{0}s[default] avant de soumettre un autre rapport de bug.",
+  "bugreport.usage": "[green][DiscordUtilities][default] Tapez [gold]!bug[default] pour ouvrir le menu ou [gold]!bug <description>[default] pour signaler directement.",
+  "bugreport.reason_too_short": "[red][DiscordUtilities][default] Description du bug trop courte ! Veuillez entrer au moins [gold]{0}[default] caractères.",
+  "bugreport.custom_prompt": "[green][DiscordUtilities][default] Pour signaler un bug personnalisé, tapez : [gold]!bug <décrivez votre problème ici>[default]",
+  "bugreport.sent": "[green][DiscordUtilities][default] Merci ! Votre rapport de bug a été soumis sur Discord. [gold]({0}s de délai d'attente appliqué)[default]"
+}

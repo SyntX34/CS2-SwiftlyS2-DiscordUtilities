@@ -1,0 +1,15 @@
+{
+  "calladmin.cooldown": "[green][DiscordUtilities][default] Vent venligst [gold]{0}s[default] før du tilkalder en admin igen.",
+  "calladmin.usage": "[green][DiscordUtilities][default] Brug: [gold]!calladmin[default] (åbner menu) eller [gold]!calladmin <spiller> <grund>[default]",
+  "calladmin.reason_too_short": "[red][DiscordUtilities][default] Grunden er for kort! Indtast mindst [gold]{0}[default] tegn.",
+  "calladmin.custom_prompt": "[green][DiscordUtilities][default] For at rapportere med en brugerdefineret grund: [gold]!calladmin {0} <skriv grund her>[default]",
+  "calladmin.no_players": "[red][DiscordUtilities][default] Ingen andre spillere fundet online at rapportere.",
+  "calladmin.select_reason": "Vælg årsag til rapportering af {0}:",
+  "calladmin.sent": "[green][DiscordUtilities][default] Din rapport er blevet sendt til vores administratorer på Discord. [gold]({0}s cooldown aktiveret)[default]",
+
+  "bugreport.cooldown": "[green][DiscordUtilities][default] Vent venligst [gold]{0}s[default] før du indsender en ny fejlrapport.",
+  "bugreport.usage": "[green][DiscordUtilities][default] Skriv [gold]!bug[default] for at åbne menuen, eller [gold]!bug <beskrivelse>[default] for at rapportere direkte.",
+  "bugreport.reason_too_short": "[red][DiscordUtilities][default] Fejlbeskrivelsen er for kort! Indtast mindst [gold]{0}[default] tegn.",
+  "bugreport.custom_prompt": "[green][DiscordUtilities][default] For at rapportere en fejl, skriv: [gold]!bug <beskriv fejlen her>[default]",
+  "bugreport.sent": "[green][DiscordUtilities][default] Mange tak! Din fejlrapport er blevet sendt til Discord. [gold]({0}s cooldown aktiveret)[default]"
+}

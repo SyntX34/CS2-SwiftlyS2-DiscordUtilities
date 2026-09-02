@@ -1,3 +1,15 @@
 {
-  "hello": "world"
+  "calladmin.cooldown": "[green][DiscordUtilities][default] Please wait [gold]{0}s[default] before calling an admin again.",
+  "calladmin.usage": "[green][DiscordUtilities][default] Usage: [gold]!calladmin[default] (opens menu) or [gold]!calladmin <target> <reason>[default]",
+  "calladmin.reason_too_short": "[red][DiscordUtilities][default] Reason too short! Please provide at least [gold]{0}[default] characters.",
+  "calladmin.custom_prompt": "[green][DiscordUtilities][default] To report with a custom reason, type: [gold]!calladmin {0} <describe reason here>[default]",
+  "calladmin.no_players": "[red][DiscordUtilities][default] No other players found online to report.",
+  "calladmin.select_reason": "Select reason for reporting {0}:",
+  "calladmin.sent": "[green][DiscordUtilities][default] Your report has been sent to our administrators on Discord. [gold]({0}s cooldown applied)[default]",
+
+  "bugreport.cooldown": "[green][DiscordUtilities][default] Please wait [gold]{0}s[default] before submitting another bug report.",
+  "bugreport.usage": "[green][DiscordUtilities][default] Type [gold]!bug[default] to open the report menu, or [gold]!bug <description>[default] to report directly.",
+  "bugreport.reason_too_short": "[red][DiscordUtilities][default] Bug description too short! Please provide at least [gold]{0}[default] characters.",
+  "bugreport.custom_prompt": "[green][DiscordUtilities][default] To report a custom bug, type: [gold]!bug <describe your issue here>[default]",
+  "bugreport.sent": "[green][DiscordUtilities][default] Thank you! Your bug report has been submitted to Discord. [gold]({0}s cooldown applied)[default]"
 }

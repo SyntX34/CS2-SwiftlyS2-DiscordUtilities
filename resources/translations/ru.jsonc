@@ -1,0 +1,15 @@
+{
+  "calladmin.cooldown": "[green][DiscordUtilities][default] Пожалуйста, подождите [gold]{0}с[default] перед повторным вызовом администратора.",
+  "calladmin.usage": "[green][DiscordUtilities][default] Использование: [gold]!calladmin[default] (открыть меню) или [gold]!calladmin <игрок> <причина>[default]",
+  "calladmin.reason_too_short": "[red][DiscordUtilities][default] Слишком короткая причина! Укажите не менее [gold]{0}[default] символов.",
+  "calladmin.custom_prompt": "[green][DiscordUtilities][default] Чтобы указать свою причину, введите: [gold]!calladmin {0} <опишите причину>[default]",
+  "calladmin.no_players": "[red][DiscordUtilities][default] Других игроков онлайн для жалобы не найдено.",
+  "calladmin.select_reason": "Выберите причину жалобы на {0}:",
+  "calladmin.sent": "[green][DiscordUtilities][default] Ваша жалоба отправлена администраторам в Discord. [gold](кд {0}с)[default]",
+
+  "bugreport.cooldown": "[green][DiscordUtilities][default] Пожалуйста, подождите [gold]{0}с[default] перед отправкой следующего отчета об ошибке.",
+  "bugreport.usage": "[green][DiscordUtilities][default] Введите [gold]!bug[default], чтобы открыть меню, или [gold]!bug <описание>[default] для прямой отправки.",
+  "bugreport.reason_too_short": "[red][DiscordUtilities][default] Описание ошибки слишком короткое! Укажите не менее [gold]{0}[default] символов.",
+  "bugreport.custom_prompt": "[green][DiscordUtilities][default] Чтобы сообщить об ошибке, введите: [gold]!bug <опишите проблему>[default]",
+  "bugreport.sent": "[green][DiscordUtilities][default] Спасибо! Ваш отчет об ошибке отправлен в Discord. [gold](кд {0}с)[default]"
+}

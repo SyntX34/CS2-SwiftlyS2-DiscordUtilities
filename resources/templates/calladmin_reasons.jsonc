@@ -1,0 +1,32 @@
+{
+  "Reasons": [
+    {
+      "Title": "Cheating / Wallhack / Aimbot",
+      "Description": "Player is suspected of using illegal cheats, ESP, or aim assistance"
+    },
+    {
+      "Title": "Mic / Voice Chat Spam",
+      "Description": "Playing loud music, screeching, or spamming voice chat"
+    },
+    {
+      "Title": "Toxicity / Harassment",
+      "Description": "Excessive verbal abuse, racism, sexism, or hate speech"
+    },
+    {
+      "Title": "Team Killing / Griefing",
+      "Description": "Intentionally blocking teammates, team attacking, or throwing"
+    },
+    {
+      "Title": "Exploiting / Map Glitch",
+      "Description": "Abusing out-of-bounds or bugged map spots to gain unfair advantage"
+    },
+    {
+      "Title": "AFK / Idling",
+      "Description": "Player is AFK for prolonged periods blocking a slot"
+    },
+    {
+      "Title": "Other / Custom Report",
+      "Description": "Please type !calladmin <player> <detailed reason> in chat"
+    }
+  ]
+}

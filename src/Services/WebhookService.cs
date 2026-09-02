@@ -57,12 +57,13 @@ public sealed class WebhookService : IDisposable
         return false;
     }
 
-    public async Task SendEmbedAsync(string webhookUrl, DiscordEmbed embed, string? username = null, string? avatarUrl = null, List<DiscordComponentActionRow>? components = null)
+    public async Task SendEmbedAsync(string webhookUrl, DiscordEmbed embed, string? username = null, string? avatarUrl = null, string? content = null, List<DiscordComponentActionRow>? components = null)
     {
         if (string.IsNullOrWhiteSpace(webhookUrl)) return;
 
         var payload = new WebhookPayload
         {
+            Content = content,
             Username = username,
             AvatarUrl = avatarUrl,
             Embeds = [embed],

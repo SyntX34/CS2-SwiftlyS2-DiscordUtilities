@@ -11,10 +11,10 @@ namespace DiscordUtilities;
 
 [PluginMetadata(
     Id = "DiscordUtilities",
-    Version = "1.0.2",
+    Version = "1.1.0",
     Name = "Discord Utilities",
     Author = "SyntX34",
-    Description = "Discord integration for CS2 — map notifications, chat relay, admin logs.")]
+    Description = "Discord integration for CS2: map notifications, chat relay, admin logs, calladmin, bugreport.")]
 public partial class DiscordUtilities : BasePlugin
 {
     internal WebhookService Webhook { get; private set; } = null!;
@@ -32,7 +32,9 @@ public partial class DiscordUtilities : BasePlugin
     public override void Load(bool hotReload)
     {
         Core.Configuration
-            .InitializeJsonWithModel<PluginConfig>("config.jsonc", "DiscordUtilities");
+            .InitializeJsonWithModel<PluginConfig>("config.jsonc", "DiscordUtilities")
+            .InitializeWithTemplate("calladmin_reasons.jsonc", "calladmin_reasons.jsonc")
+            .InitializeWithTemplate("bug_reasons.jsonc", "bug_reasons.jsonc");
 
         Webhook = new WebhookService(Core.Logger);
         SteamApi = new SteamApiService(Core.Logger);
@@ -43,10 +45,12 @@ public partial class DiscordUtilities : BasePlugin
         InitializeMapNotification();
         InitializeChatRelay();
         InitializeAdminLogs();
+        InitializeCallAdmin();
+        InitializeBugReport();
         InitializeDiscordToServer();
 
-        Core.Logger.LogInformation("[DiscordUtilities] Loaded — Map: {Map} | Chat: {Chat} | Admin: {Admin} | DiscordToServer: {Bot}",
-            Config.MapNotification.Enabled, Config.ChatRelay.Enabled, Config.AdminLogs.Enabled, Config.DiscordToServer.Enabled);
+        Core.Logger.LogInformation("[DiscordUtilities] Loaded — Map: {Map} | Chat: {Chat} | Admin: {Admin} | CallAdmin: {CallAdmin} | BugReport: {BugReport} | DiscordToServer: {Bot}",
+            Config.MapNotification.Enabled, Config.ChatRelay.Enabled, Config.AdminLogs.Enabled, Config.CallAdmin.Enabled, Config.BugReport.Enabled, Config.DiscordToServer.Enabled);
     }
 
     private void InitializeDiscordToServer()
@@ -181,6 +185,20 @@ public partial class DiscordUtilities : BasePlugin
             var valid = await Webhook.ValidateWebhookAsync(Config.AdminLogs.WebhookUrl);
             if (!valid)
                 Core.Logger.LogWarning("[DiscordUtilities] AdminLogs Webhook URL appears invalid or unreachable!");
+        }
+
+        if (Config.CallAdmin.Enabled && !string.IsNullOrWhiteSpace(Config.CallAdmin.WebhookUrl))
+        {
+            var valid = await Webhook.ValidateWebhookAsync(Config.CallAdmin.WebhookUrl);
+            if (!valid)
+                Core.Logger.LogWarning("[DiscordUtilities] CallAdmin Webhook URL appears invalid or unreachable!");
+        }
+
+        if (Config.BugReport.Enabled && !string.IsNullOrWhiteSpace(Config.BugReport.WebhookUrl))
+        {
+            var valid = await Webhook.ValidateWebhookAsync(Config.BugReport.WebhookUrl);
+            if (!valid)
+                Core.Logger.LogWarning("[DiscordUtilities] BugReport Webhook URL appears invalid or unreachable!");
         }
 
         if (Config.DiscordToServer.Enabled)

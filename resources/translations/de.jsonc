@@ -1,0 +1,15 @@
+{
+  "calladmin.cooldown": "[green][DiscordUtilities][default] Bitte warte [gold]{0}s[default], bevor du erneut einen Admin rufst.",
+  "calladmin.usage": "[green][DiscordUtilities][default] Verwendung: [gold]!calladmin[default] (öffnet Menü) oder [gold]!calladmin <Spieler> <Grund>[default]",
+  "calladmin.reason_too_short": "[red][DiscordUtilities][default] Grund zu kurz! Bitte gib mindestens [gold]{0}[default] Zeichen ein.",
+  "calladmin.custom_prompt": "[green][DiscordUtilities][default] Für einen benutzerdefinierten Grund tippe: [gold]!calladmin {0} <Grund eingeben>[default]",
+  "calladmin.no_players": "[red][DiscordUtilities][default] Keine anderen Spieler online zum Melden gefunden.",
+  "calladmin.select_reason": "Wähle einen Grund für die Meldung von {0}:",
+  "calladmin.sent": "[green][DiscordUtilities][default] Deine Meldung wurde an unsere Administratoren auf Discord gesendet. [gold]({0}s Abklingzeit angewendet)[default]",
+
+  "bugreport.cooldown": "[green][DiscordUtilities][default] Bitte warte [gold]{0}s[default], bevor du einen weiteren Fehler meldest.",
+  "bugreport.usage": "[green][DiscordUtilities][default] Tippe [gold]!bug[default], um das Fehlermenü zu öffnen, oder [gold]!bug <Beschreibung>[default], um direkt zu melden.",
+  "bugreport.reason_too_short": "[red][DiscordUtilities][default] Fehlerbeschreibung zu kurz! Bitte gib mindestens [gold]{0}[default] Zeichen ein.",
+  "bugreport.custom_prompt": "[green][DiscordUtilities][default] Um einen Fehler zu beschreiben, tippe: [gold]!bug <Problem hier beschreiben>[default]",
+  "bugreport.sent": "[green][DiscordUtilities][default] Vielen Dank! Dein Fehlerbericht wurde auf Discord übermittelt. [gold]({0}s Abklingzeit angewendet)[default]"
+}

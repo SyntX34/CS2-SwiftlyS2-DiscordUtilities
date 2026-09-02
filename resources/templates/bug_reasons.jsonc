@@ -1,0 +1,28 @@
+{
+  "Reasons": [
+    {
+      "Title": "Map Glitch / Stuck Spot",
+      "Description": "Found a broken spot, unintended boost, or stuck area on current map"
+    },
+    {
+      "Title": "Texture / Visual Glitch",
+      "Description": "Missing textures, black boxes, lighting issues or visual bugs"
+    },
+    {
+      "Title": "Server Lag / FPS Drops",
+      "Description": "Experiencing severe server tick delay, stuttering, or fps drops"
+    },
+    {
+      "Title": "Plugin / Feature Issue",
+      "Description": "A plugin command, store, class, or game feature is malfunctioning"
+    },
+    {
+      "Title": "Weapon / Damage Issue",
+      "Description": "Guns, items, or damage numbers are behaving incorrectly"
+    },
+    {
+      "Title": "Other / Custom Report",
+      "Description": "Please type !bugreport <detailed explanation> in chat"
+    }
+  ]
+}

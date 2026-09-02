@@ -102,15 +102,6 @@ public partial class DiscordUtilities
             {
                 workshopInfo = await SteamApi.GetWorkshopMapInfoAsync(workshopId);
             }
-            else
-            {
-                workshopInfo = await SteamApi.SearchWorkshopMapByNameAsync(cleanMapName);
-                if (workshopInfo != null && workshopInfo.WorkshopId > 0)
-                {
-                    isWorkshop = true;
-                    workshopId = workshopInfo.WorkshopId;
-                }
-            }
 
             if (isWorkshop && config.ShowWorkshopId)
             {
@@ -132,7 +123,7 @@ public partial class DiscordUtilities
             else
             {
                 embed.AddField("Current Map", $"`{cleanMapName}`", true);
-                mapImageUrl = await SteamApi.GetMapImageAsync(cleanMapName, isWorkshop ? workshopId : null);
+                mapImageUrl = await SteamApi.GetMapImageAsync(cleanMapName, null);
             }
 
             if (config.ShowPlayerCount)

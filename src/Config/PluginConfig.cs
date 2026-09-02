@@ -10,6 +10,8 @@ public sealed class PluginConfig
     public ChatRelayConfig ChatRelay { get; set; } = new();
     public DiscordToServerConfig DiscordToServer { get; set; } = new();
     public AdminLogsConfig AdminLogs { get; set; } = new();
+    public CallAdminConfig CallAdmin { get; set; } = new();
+    public BugReportConfig BugReport { get; set; } = new();
 }
 
 public sealed class MapNotificationConfig
@@ -58,3 +60,29 @@ public sealed class AdminLogsConfig
     public bool LogRcon { get; set; } = true;
     public int CooldownSeconds { get; set; } = 2;
 }
+
+public sealed class CallAdminConfig
+{
+    public bool Enabled { get; set; } = true;
+    public string WebhookUrl { get; set; } = "";
+    public string MentionRoleOrUser { get; set; } = ""; // e.g. "<@&ROLE_ID>" or "@here"
+    public string BannerUrl { get; set; } = "";
+    public string EmbedColor { get; set; } = "#FFA500";
+    public string MenuTitle { get; set; } = "CallAdmin - Select Player / Reason";
+    public int CooldownSeconds { get; set; } = 30;
+    public int MinimumReasonLength { get; set; } = 3;
+}
+
+public sealed class BugReportConfig
+{
+    public bool Enabled { get; set; } = true;
+    public string WebhookUrl { get; set; } = "";
+    public string MentionRoleOrUser { get; set; } = ""; // e.g. "<@&ROLE_ID>" or "@here"
+    public string BannerUrl { get; set; } = "";
+    public string EmbedColor { get; set; } = "#FFFF00";
+    public string MenuTitle { get; set; } = "Report a Bug / Issue";
+    public int CooldownSeconds { get; set; } = 30;
+    public int MinimumReasonLength { get; set; } = 3;
+}
+
+
