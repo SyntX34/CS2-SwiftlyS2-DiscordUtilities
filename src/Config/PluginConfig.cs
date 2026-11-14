@@ -147,5 +147,6 @@ public sealed class DiscordRconConfig
     public string BotToken { get; set; } = "";
     public string ChannelId { get; set; } = "";
     public string CommandPrefix { get; set; } = "!rcon ";
+    public string ConsoleMessageFormat { get; set; } = "[red][Console]: [red]{Message}[default]";
     public List<string> AllowedDiscordUserIds { get; set; } = [];
 }

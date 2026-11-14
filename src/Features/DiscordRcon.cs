@@ -59,7 +59,17 @@ public partial class DiscordUtilities
         {
             try
             {
-                Core.Engine.ExecuteCommand(command);
+                if (command.StartsWith("say ", StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(Config.DiscordRcon.ConsoleMessageFormat))
+                {
+                    var msg = command[4..].Trim();
+                    var formatted = Config.DiscordRcon.ConsoleMessageFormat.Replace("{Message}", msg);
+                    Core.PlayerManager.SendChat(formatted);
+                }
+                else
+                {
+                    Core.Engine.ExecuteCommand(command);
+                }
                 Core.Logger.LogInformation("[DiscordUtilities] [DiscordRcon] {Author} ({Id}) executed: {Command}", authorName, authorId, command);
                 _ = DiscordBotService.SendChannelMessageAsync(token, channelId, $"Executed: `{command}`", Core.Logger);
             }
