@@ -10,18 +10,25 @@ public sealed class DiscordBotService : IDisposable
 {
     private readonly ILogger _logger;
     private readonly Action<string, string> _onMessageReceived;
+    private readonly Action<string, string, string, string>? _onRawMessageReceived;
     private readonly Func<bool> _isDebugEnabled;
+    private static readonly HttpClient _httpClient = new();
     private ClientWebSocket? _webSocket;
     private CancellationTokenSource? _cts;
     private int _heartbeatIntervalMs = 41250;
     private int? _lastSequence;
     private bool _disposed;
 
-    public DiscordBotService(ILogger logger, Action<string, string> onMessageReceived, Func<bool>? isDebugEnabled = null)
+    public DiscordBotService(
+        ILogger logger,
+        Action<string, string> onMessageReceived,
+        Func<bool>? isDebugEnabled = null,
+        Action<string, string, string, string>? onRawMessageReceived = null)
     {
         _logger = logger;
         _onMessageReceived = onMessageReceived;
         _isDebugEnabled = isDebugEnabled ?? (() => false);
+        _onRawMessageReceived = onRawMessageReceived;
     }
 
     public void Start(string botToken, string channelId)
@@ -203,6 +210,7 @@ public sealed class DiscordBotService : IDisposable
 
                         if (!isBot)
                         {
+                            var authorId = author.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? "" : "";
                             var authorName = author.TryGetProperty("global_name", out var gName) && gName.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(gName.GetString())
                                 ? gName.GetString()!
                                 : author.GetProperty("username").GetString() ?? "User";
@@ -212,6 +220,7 @@ public sealed class DiscordBotService : IDisposable
                             if (!string.IsNullOrWhiteSpace(content))
                             {
                                 _onMessageReceived(authorName, content);
+                                _onRawMessageReceived?.Invoke(msgChannelId ?? "", authorId, authorName, content);
                             }
                         }
                     }
@@ -267,5 +276,51 @@ public sealed class DiscordBotService : IDisposable
     {
         _disposed = true;
         Stop();
+    }
+
+    public static async Task SendChannelMessageAsync(string botToken, string channelId, string content, ILogger? logger = null)
+    {
+        if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(channelId) || string.IsNullOrWhiteSpace(content))
+            return;
+
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"https://discord.com/api/v10/channels/{channelId}/messages");
+            req.Headers.Add("Authorization", $"Bot {botToken}");
+            var payload = JsonSerializer.Serialize(new { content });
+            req.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+            using var res = await _httpClient.SendAsync(req);
+            if (!res.IsSuccessStatusCode)
+                logger?.LogWarning("[DiscordUtilities] Failed to send Discord message ({Status})", res.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogError(ex, "[DiscordUtilities] Error sending Discord message");
+        }
+    }
+
+    public static async Task<bool> AddGuildMemberRoleAsync(string botToken, string guildId, string userId, string roleId, ILogger? logger = null)
+    {
+        if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(guildId) ||
+            string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(roleId))
+            return false;
+
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Put, $"https://discord.com/api/v10/guilds/{guildId}/members/{userId}/roles/{roleId}");
+            req.Headers.Add("Authorization", $"Bot {botToken}");
+            using var res = await _httpClient.SendAsync(req);
+            if (!res.IsSuccessStatusCode)
+            {
+                logger?.LogWarning("[DiscordUtilities] Failed to assign role {RoleId} to {UserId} ({Status})", roleId, userId, res.StatusCode);
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger?.LogError(ex, "[DiscordUtilities] Error assigning Discord role");
+            return false;
+        }
     }
 }

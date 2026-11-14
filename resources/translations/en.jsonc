@@ -11,5 +11,12 @@
   "bugreport.usage": "[green][DiscordUtilities][default] Type [gold]!bug[default] to open the report menu, or [gold]!bug <description>[default] to report directly.",
   "bugreport.reason_too_short": "[red][DiscordUtilities][default] Bug description too short! Please provide at least [gold]{0}[default] characters.",
   "bugreport.custom_prompt": "[green][DiscordUtilities][default] To report a custom bug, type: [gold]!bug <describe your issue here>[default]",
-  "bugreport.sent": "[green][DiscordUtilities][default] Thank you! Your bug report has been submitted to Discord. [gold]({0}s cooldown applied)[default]"
+  "bugreport.sent": "[green][DiscordUtilities][default] Thank you! Your bug report has been submitted to Discord. [gold]({0}s cooldown applied)[default]",
+
+  "verification.already_linked": "[green][DiscordUtilities][default] Your Steam account is already linked to Discord ID [gold]{0}[default]. Use [gold]!{1}[default] to unlink.",
+  "verification.code_generated": "[green][DiscordUtilities][default] Your verification code is: [gold]{0}[default]",
+  "verification.code_instructions": "[green][DiscordUtilities][default] Send [gold]!link {0}[default] in the Discord verification channel within [gold]{1}[default] minute(s).",
+  "verification.unlinked": "[green][DiscordUtilities][default] Your Discord account has been [red]unlinked[default].",
+  "verification.not_linked": "[red][DiscordUtilities][default] Your account is not currently linked.",
+  "verification.linked_ingame": "[green][DiscordUtilities][default] Your Steam account has been linked to Discord user [gold]{0}[default]!"
 }

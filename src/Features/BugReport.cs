@@ -1,7 +1,8 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using SwiftlyS2.Core.Menus.OptionsBase;
+using SwiftlyS2.Shared.Menu;
+using SwiftlyS2.Shared.Menu.Components;
 using SwiftlyS2.Shared.Misc;
 using SwiftlyS2.Shared.Players;
 using DiscordUtilities.Services;
@@ -200,7 +201,7 @@ public partial class DiscordUtilities
 
         var config = Config.BugReport;
         var menuTitle = string.IsNullOrWhiteSpace(config.MenuTitle) ? "Report a Bug / Issue" : config.MenuTitle;
-        var builder = Core.MenusAPI.CreateBuilder().Design.SetMenuTitle(menuTitle);
+        var builder = Core.Menu.CreateMenu("discordutilities.bugreport").WithTitle(menuTitle);
 
         if (_preconfiguredBugReasons.Count == 0)
         {
@@ -209,17 +210,15 @@ public partial class DiscordUtilities
 
         foreach (var item in _preconfiguredBugReasons)
         {
-            var option = new ButtonMenuOption(item.Title);
             var capturedItem = item;
-
-            option.Click += async (_, args) =>
+            var option = new ButtonComponent(item.Title, ctx =>
             {
-                await Core.Scheduler.NextTickAsync(() =>
+                Core.Scheduler.NextTick(() =>
                 {
-                    if (IsBugReportOnCooldown(args.Player, out var remaining))
+                    if (IsBugReportOnCooldown(ctx.Player, out var remaining))
                     {
                         var msg = Core.Localizer["bugreport.cooldown", remaining];
-                        args.Player.SendChat(msg);
+                        ctx.Player.SendChat(msg);
                         return;
                     }
 
@@ -227,23 +226,24 @@ public partial class DiscordUtilities
                         capturedItem.Title.Contains("Custom", StringComparison.OrdinalIgnoreCase))
                     {
                         var prompt = Core.Localizer["bugreport.custom_prompt"];
-                        args.Player.SendChat(prompt);
+                        ctx.Player.SendChat(prompt);
                     }
                     else
                     {
-                        var detail = string.IsNullOrWhiteSpace(capturedItem.Description) 
-                            ? capturedItem.Title 
+                        var detail = string.IsNullOrWhiteSpace(capturedItem.Description)
+                            ? capturedItem.Title
                             : $"{capturedItem.Title} ({capturedItem.Description})";
 
-                        _ = Task.Run(() => SubmitBugReportAsync(args.Player, detail));
+                        _ = Task.Run(() => SubmitBugReportAsync(ctx.Player, detail));
                     }
                 });
-            };
+                return ValueTask.CompletedTask;
+            });
 
-            builder.AddOption(option);
+            builder.Add(option);
         }
 
-        Core.MenusAPI.OpenMenuForPlayer(player, builder.Build());
+        builder.Build().Open(player);
     }
 
     private async Task SubmitBugReportAsync(IPlayer reporter, string reason)

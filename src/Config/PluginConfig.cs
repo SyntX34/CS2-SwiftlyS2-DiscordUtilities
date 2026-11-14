@@ -14,6 +14,9 @@ public sealed class PluginConfig
     public CallAdminConfig CallAdmin { get; set; } = new();
     public BugReportConfig BugReport { get; set; } = new();
     public PlayerJoinedConfig PlayerJoined { get; set; } = new();
+    public VerificationConfig Verification { get; set; } = new();
+    public CommandBlockerConfig CommandBlocker { get; set; } = new();
+    public DiscordRconConfig DiscordRcon { get; set; } = new();
 }
 
 public sealed class MapNotificationConfig
@@ -115,4 +118,34 @@ public class PlayerJoinedConfig
     public bool ShowDisconnectReason { get; set; } = true;
 }
 
+public sealed class VerificationConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string BotToken { get; set; } = "";
+    public string ChannelId { get; set; } = "";
+    public string GuildId { get; set; } = "";
+    public string VerifiedRoleId { get; set; } = "";
+    public string LinkCommand { get; set; } = "link";
+    public string UnlinkCommand { get; set; } = "unlink";
+    public int CodeExpiryMinutes { get; set; } = 5;
+    public string WebhookUrl { get; set; } = "";
+}
 
+public sealed class CommandBlockerConfig
+{
+    public bool Enabled { get; set; } = false;
+    public List<string> BlockedCommands { get; set; } = ["kill", "explode"];
+    public string BypassPermission { get; set; } = "admin.root";
+    public string BlockedMessage { get; set; } = "[DiscordUtilities] You are not allowed to use this command.";
+    public string WebhookUrl { get; set; } = "";
+    public string EmbedColor { get; set; } = "#ED4245";
+}
+
+public sealed class DiscordRconConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string BotToken { get; set; } = "";
+    public string ChannelId { get; set; } = "";
+    public string CommandPrefix { get; set; } = "!rcon ";
+    public List<string> AllowedDiscordUserIds { get; set; } = [];
+}

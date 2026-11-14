@@ -12,10 +12,10 @@ namespace DiscordUtilities;
 [PluginMetadata
     (
         Id = "DiscordUtilities",
-        Version = "1.1.3",
+        Version = "1.1.4",
         Name = "Discord Utilities",
         Author = "SyntX34",
-        Description = "Discord integration for CS2: map notifications, chat relay, admin logs, calladmin, bugreport, Player join / disconnect."
+        Description = "Discord integration for CS2: map notifications, chat relay, admin logs, calladmin, bugreport, player join/disconnect, verification, command blocker, and Discord RCON."
     )
 ]
 public partial class DiscordUtilities : BasePlugin
@@ -52,9 +52,12 @@ public partial class DiscordUtilities : BasePlugin
         InitializeBugReport();
         InitializeDiscordToServer();
         InitializePlayerJoined();
+        InitializeVerification();
+        InitializeCommandBlocker();
+        InitializeDiscordRcon();
 
-        Core.Logger.LogInformation("[DiscordUtilities] Loaded — Map: {Map} | Chat: {Chat} | Admin: {Admin} | CallAdmin: {CallAdmin} | BugReport: {BugReport} | DiscordToServer: {Bot}",
-            Config.MapNotification.Enabled, Config.ChatRelay.Enabled, Config.AdminLogs.Enabled, Config.CallAdmin.Enabled, Config.BugReport.Enabled, Config.DiscordToServer.Enabled);
+        Core.Logger.LogInformation("[DiscordUtilities] Loaded — Map: {Map} | Chat: {Chat} | Admin: {Admin} | CallAdmin: {CallAdmin} | BugReport: {BugReport} | DiscordToServer: {Bot} | Verification: {Verification} | CommandBlocker: {CmdBlock} | DiscordRcon: {Rcon}",
+            Config.MapNotification.Enabled, Config.ChatRelay.Enabled, Config.AdminLogs.Enabled, Config.CallAdmin.Enabled, Config.BugReport.Enabled, Config.DiscordToServer.Enabled, Config.Verification.Enabled, Config.CommandBlocker.Enabled, Config.DiscordRcon.Enabled);
     }
 
     private void InitializeDiscordToServer()
@@ -286,6 +289,8 @@ public partial class DiscordUtilities : BasePlugin
     {
         _configWatcher?.Dispose();
         DiscordBot?.Dispose();
+        _verificationBot?.Dispose();
+        _rconBot?.Dispose();
         Webhook?.Dispose();
         SteamApi?.Dispose();
         Core.Logger.LogInformation("[DiscordUtilities] Unloaded");

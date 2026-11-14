@@ -1,7 +1,8 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using SwiftlyS2.Core.Menus.OptionsBase;
+using SwiftlyS2.Shared.Menu;
+using SwiftlyS2.Shared.Menu.Components;
 using SwiftlyS2.Shared.Misc;
 using SwiftlyS2.Shared.Players;
 using DiscordUtilities.Services;
@@ -183,7 +184,7 @@ public partial class DiscordUtilities
 
         var config = Config.CallAdmin;
         var menuTitle = string.IsNullOrWhiteSpace(config.MenuTitle) ? "CallAdmin - Select Player" : config.MenuTitle;
-        var builder = Core.MenusAPI.CreateBuilder().Design.SetMenuTitle(menuTitle);
+        var builder = Core.Menu.CreateMenu("discordutilities.calladmin.players").WithTitle(menuTitle);
 
         foreach (var target in otherPlayers)
         {
@@ -191,19 +192,19 @@ public partial class DiscordUtilities
             var targetId = target.PlayerID;
             var targetSteamId = target.SteamID;
 
-            var option = new ButtonMenuOption($"{targetName} (#{targetId})");
-            option.Click += async (_, args) =>
+            var option = new ButtonComponent($"{targetName} (#{targetId})", ctx =>
             {
-                await Core.Scheduler.NextTickAsync(() =>
+                Core.Scheduler.NextTick(() =>
                 {
-                    OpenCallAdminReasonMenu(args.Player, targetName, targetSteamId);
+                    OpenCallAdminReasonMenu(ctx.Player, targetName, targetSteamId);
                 });
-            };
+                return ValueTask.CompletedTask;
+            });
 
-            builder.AddOption(option);
+            builder.Add(option);
         }
 
-        Core.MenusAPI.OpenMenuForPlayer(reporter, builder.Build());
+        builder.Build().Open(reporter);
     }
 
     private bool IsCallAdminOnCooldown(IPlayer player, out int remainingSeconds)
@@ -244,21 +245,19 @@ public partial class DiscordUtilities
         }
 
         var selectTitle = Core.Localizer["calladmin.select_reason", targetName];
-        var builder = Core.MenusAPI.CreateBuilder().Design.SetMenuTitle(selectTitle);
+        var builder = Core.Menu.CreateMenu("discordutilities.calladmin.reasons").WithTitle(selectTitle);
 
         foreach (var item in _preconfiguredCallAdminReasons)
         {
-            var option = new ButtonMenuOption(item.Title);
             var capturedReason = item;
-
-            option.Click += async (_, args) =>
+            var option = new ButtonComponent(item.Title, ctx =>
             {
-                await Core.Scheduler.NextTickAsync(() =>
+                Core.Scheduler.NextTick(() =>
                 {
-                    if (IsCallAdminOnCooldown(args.Player, out var remaining))
+                    if (IsCallAdminOnCooldown(ctx.Player, out var remaining))
                     {
                         var msg = Core.Localizer["calladmin.cooldown", remaining];
-                        args.Player.SendChat(msg);
+                        ctx.Player.SendChat(msg);
                         return;
                     }
 
@@ -266,7 +265,7 @@ public partial class DiscordUtilities
                         capturedReason.Title.Contains("Custom", StringComparison.OrdinalIgnoreCase))
                     {
                         var prompt = Core.Localizer["calladmin.custom_prompt", targetName];
-                        args.Player.SendChat(prompt);
+                        ctx.Player.SendChat(prompt);
                     }
                     else
                     {
@@ -274,15 +273,16 @@ public partial class DiscordUtilities
                             ? capturedReason.Title
                             : $"{capturedReason.Title} ({capturedReason.Description})";
 
-                        _ = Task.Run(() => SubmitCallAdminReportAsync(args.Player, targetName, targetSteamId, reasonText));
+                        _ = Task.Run(() => SubmitCallAdminReportAsync(ctx.Player, targetName, targetSteamId, reasonText));
                     }
                 });
-            };
+                return ValueTask.CompletedTask;
+            });
 
-            builder.AddOption(option);
+            builder.Add(option);
         }
 
-        Core.MenusAPI.OpenMenuForPlayer(reporter, builder.Build());
+        builder.Build().Open(reporter);
     }
 
     private async Task HandleCallAdminCommandAsync(int reporterPlayerId, string rawArgs)

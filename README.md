@@ -5,7 +5,7 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/SyntX34/CS2-SwiftlyS2-DiscordUtilities/releases"><img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version"></a>
+  <a href="https://github.com/SyntX34/CS2-SwiftlyS2-DiscordUtilities/releases"><img src="https://img.shields.io/badge/version-1.1.4-blue.svg" alt="Version"></a>
   <a href="https://github.com/swiftly-solution/swiftlys2"><img src="https://img.shields.io/badge/framework-SwiftlyS2-orange.svg" alt="Framework"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
 </p>
@@ -20,6 +20,9 @@
 | 🚨 **CallAdmin** | In-game player reporting (`!calladmin`, `!report`, `sw_calladmin`) to Discord with target detection, cooldowns, and role pings | Separate webhook |
 | 🐛 **Bug Report** | In-game bug reporting menu (`!bug`, `!bugreport`) with customizable preconfigured reasons (`bug_reasons.jsonc`) & custom details | Separate webhook |
 | 🔄 **Discord → Server** | *(Phase 2)* Relay Discord messages into the game server — requires bot token | Separate channel |
+| 🔗 **Verification (Linking)** | Link Steam accounts to Discord via `!link` / `!verify` codes, with optional Discord role assignment & webhook logs | Bot channel / Webhook |
+| 🚫 **Command Blocker** | Block specified client commands with permission bypass support and optional Discord webhook alerts | Separate webhook |
+| 🖥️ **Discord RCON** | Execute server console commands (e.g. mute, gag, kick, ban) directly from Discord for authorized user IDs | Bot channel |
 
 ### Feature Previews
 
