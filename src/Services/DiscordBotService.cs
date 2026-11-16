@@ -12,6 +12,7 @@ public sealed class DiscordBotService : IDisposable
     private readonly Action<string, string> _onMessageReceived;
     private readonly Action<string, string, string, string>? _onRawMessageReceived;
     private readonly Func<bool> _isDebugEnabled;
+    private readonly Action<string, string, string, string, string, string>? _onButton;
     private static readonly HttpClient _httpClient = new();
     private ClientWebSocket? _webSocket;
     private CancellationTokenSource? _cts;
@@ -23,12 +24,14 @@ public sealed class DiscordBotService : IDisposable
         ILogger logger,
         Action<string, string> onMessageReceived,
         Func<bool>? isDebugEnabled = null,
-        Action<string, string, string, string>? onRawMessageReceived = null)
+        Action<string, string, string, string>? onRawMessageReceived = null,
+        Action<string, string, string, string, string, string>? onButton = null)
     {
         _logger = logger;
         _onMessageReceived = onMessageReceived;
         _isDebugEnabled = isDebugEnabled ?? (() => false);
         _onRawMessageReceived = onRawMessageReceived;
+        _onButton = onButton;
     }
 
     public void Start(string botToken, string channelId)
@@ -114,9 +117,8 @@ public sealed class DiscordBotService : IDisposable
             }
             catch (Exception ex)
             {
-                if (_isDebugEnabled())
-                    _logger.LogWarning(ex, "[DiscordUtilities] Discord Gateway connection lost. Reconnecting in 5s...");
-                await Task.Delay(5000, ct);
+                _logger.LogWarning(ex, "[DiscordUtilities] Discord Gateway connection lost. Reconnecting in 5s...");
+                try { await Task.Delay(5000, ct); } catch (OperationCanceledException) { break; }
             }
         }
     }
@@ -173,19 +175,37 @@ public sealed class DiscordBotService : IDisposable
                 break;
 
             case 9: // Invalid Session
-                if (_isDebugEnabled())
-                    _logger.LogWarning("[DiscordUtilities] Discord Gateway Session Invalidated (Op 9). Token or Intents might be invalid.");
+                _logger.LogWarning("[DiscordUtilities] Discord Gateway invalid session. Verify Message Content Intent in the Discord Developer Portal and restart the plugin.");
                 break;
 
             case 0: // Dispatch
                 var t = root.GetProperty("t").GetString();
                 if (t == "READY")
                 {
+                    _logger.LogInformation("[DiscordUtilities] Discord Gateway READY; listening for messages in channel {Channel}", channelId);
                     if (_isDebugEnabled())
                     {
                         var user = root.GetProperty("d").GetProperty("user");
                         var botName = user.GetProperty("username").GetString() ?? "Bot";
                         _logger.LogInformation("[DiscordUtilities] Discord Bot successfully logged in as: {BotName}", botName);
+                    }
+                }
+                else if (t == "INTERACTION_CREATE" && _onButton != null)
+                {
+                    var d = root.GetProperty("d");
+                    if (d.TryGetProperty("data", out var data) && data.TryGetProperty("custom_id", out var customId))
+                    {
+                        var member = d.TryGetProperty("member", out var m) ? m : default;
+                        var user = member.ValueKind != JsonValueKind.Undefined && member.TryGetProperty("user", out var u)
+                            ? u : d.GetProperty("user");
+                        var userId = user.GetProperty("id").GetString() ?? "";
+                        var userName = user.TryGetProperty("global_name", out var gn) && gn.ValueKind == JsonValueKind.String
+                            ? gn.GetString() ?? "" : user.GetProperty("username").GetString() ?? "";
+                        _onButton(customId.GetString() ?? "", userId, userName,
+                            d.GetProperty("id").GetString() ?? "", d.GetProperty("token").GetString() ?? "",
+                            d.TryGetProperty("type", out var interactionType) && interactionType.GetInt32() == 5
+                                ? ExtractModalCode(data)
+                                : d.TryGetProperty("message", out var msg) && msg.TryGetProperty("id", out var mid) ? mid.GetString() ?? "" : "");
                     }
                 }
                 else if (t == "MESSAGE_CREATE")
@@ -219,6 +239,7 @@ public sealed class DiscordBotService : IDisposable
 
                             if (!string.IsNullOrWhiteSpace(content))
                             {
+                                _logger.LogInformation("[DiscordUtilities] Relaying Discord message from {Author} to CS2", authorName);
                                 _onMessageReceived(authorName, content);
                                 _onRawMessageReceived?.Invoke(msgChannelId ?? "", authorId, authorName, content);
                             }
@@ -278,6 +299,114 @@ public sealed class DiscordBotService : IDisposable
         Stop();
     }
 
+    private static string ExtractModalCode(JsonElement data)
+    {
+        if (!data.TryGetProperty("components", out var rows)) return "";
+        foreach (var row in rows.EnumerateArray())
+            if (row.TryGetProperty("components", out var fields))
+                foreach (var field in fields.EnumerateArray())
+                    if (field.TryGetProperty("value", out var value)) return value.GetString() ?? "";
+        return "";
+    }
+
+    public static async Task OpenVerificationModalAsync(string interactionId, string interactionToken,
+        string title, string label, ILogger logger)
+    {
+        try
+        {
+            var payload = new { type = 9, data = new
+            {
+                custom_id = "discordutilities:verify_submit", title,
+                components = new[] { new { type = 1, components = new[] { new
+                {
+                    type = 4, custom_id = "verification_code", style = 1,
+                    label, min_length = 6, max_length = 12, required = true
+                } } } }
+            } };
+            using var response = await _httpClient.PostAsync(
+                $"https://discord.com/api/v10/interactions/{interactionId}/{interactionToken}/callback",
+                new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"));
+            if (!response.IsSuccessStatusCode) logger.LogWarning("[DiscordUtilities] Verification modal failed: {Status}", response.StatusCode);
+        }
+        catch (Exception ex) { logger.LogError(ex, "[DiscordUtilities] Verification modal failed"); }
+    }
+
+    public static async Task AcknowledgeButtonAsync(string interactionId, string interactionToken, string? ephemeralText, ILogger logger)
+    {
+        try
+        {
+            var payload = ephemeralText == null ? new { type = 6, data = (object?)null }
+                : new { type = 4, data = (object?)new { content = ephemeralText, flags = 64 } };
+            using var res = await _httpClient.PostAsync($"https://discord.com/api/v10/interactions/{interactionId}/{interactionToken}/callback",
+                new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"));
+            if (!res.IsSuccessStatusCode) logger.LogWarning("[DiscordUtilities] Button ACK failed: {Status}", res.StatusCode);
+        }
+        catch (Exception ex) { logger.LogError(ex, "[DiscordUtilities] Button ACK failed"); }
+    }
+
+    // Discord does not allow ordinary webhooks to own non-link interaction buttons.
+    // Resolve the channel from the configured webhook URL, then send using the bot token.
+    // Reuse a bot-owned verification panel after an upgrade even if the old release did not persist its ID.
+    public static async Task<string?> FindExistingPanelAsync(string token, string channelId, string customId, ILogger logger)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get,
+                $"https://discord.com/api/v10/channels/{channelId}/messages?limit=100");
+            req.Headers.Add("Authorization", $"Bot {token}");
+            using var response = await _httpClient.SendAsync(req);
+            if (!response.IsSuccessStatusCode) return null;
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            foreach (var message in doc.RootElement.EnumerateArray())
+            {
+                if (!message.TryGetProperty("components", out var rows)) continue;
+                foreach (var row in rows.EnumerateArray())
+                {
+                    if (!row.TryGetProperty("components", out var buttons)) continue;
+                    foreach (var button in buttons.EnumerateArray())
+                    {
+                        if (!button.TryGetProperty("custom_id", out var id)) continue;
+                        var value = id.GetString();
+                        if (value == customId || value == "discordutilities:verify_help")
+                            return message.GetProperty("id").GetString();
+                    }
+                }
+            }
+        }
+        catch (Exception ex) { logger.LogWarning(ex, "[DiscordUtilities] Failed to discover existing verification panel"); }
+        return null;
+    }
+
+    public static async Task<string?> UpsertInteractiveEmbedAsync(string token, string channelId,
+        DiscordEmbed embed, string customId, string buttonLabel, string? messageId = null)
+    {
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(channelId)) return null;
+        try
+        {
+            var payload = new
+            {
+                embeds = new[] { embed },
+                components = new[] { new { type = 1, components = new[] { new
+                {
+                    type = 2, style = 1, custom_id = customId, label = buttonLabel
+                } } } }
+            };
+            using var req = new HttpRequestMessage(messageId == null ? HttpMethod.Post : HttpMethod.Patch,
+                $"https://discord.com/api/v10/channels/{channelId}/messages" + (messageId == null ? "" : "/" + messageId));
+            req.Headers.Add("Authorization", $"Bot {token}");
+            req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            using var res = await _httpClient.SendAsync(req);
+            // A manually deleted panel cannot be PATCHed. Recreate it only for 404;
+            // do not create duplicates on timeouts, permission errors or rate limits.
+            if (res.StatusCode == System.Net.HttpStatusCode.NotFound && messageId != null)
+                return await UpsertInteractiveEmbedAsync(token, channelId, embed, customId, buttonLabel);
+            if (!res.IsSuccessStatusCode) return null;
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+            return doc.RootElement.GetProperty("id").GetString();
+        }
+        catch { return null; }
+    }
+
     public static async Task SendChannelMessageAsync(string botToken, string channelId, string content, ILogger? logger = null)
     {
         if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(channelId) || string.IsNullOrWhiteSpace(content))
@@ -323,4 +452,25 @@ public sealed class DiscordBotService : IDisposable
             return false;
         }
     }
+    public static async Task<bool> RemoveGuildMemberRoleAsync(string botToken, string guildId, string userId, string roleId, ILogger? logger = null)
+    {
+        if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(guildId) ||
+            string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(roleId)) return false;
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Delete,
+                $"https://discord.com/api/v10/guilds/{guildId}/members/{userId}/roles/{roleId}");
+            req.Headers.Add("Authorization", $"Bot {botToken}");
+            using var res = await _httpClient.SendAsync(req);
+            if (res.IsSuccessStatusCode) return true;
+            logger?.LogWarning("[DiscordUtilities] Failed to remove role {RoleId} from {UserId} ({Status})", roleId, userId, res.StatusCode);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            logger?.LogError(ex, "[DiscordUtilities] Error removing Discord role");
+            return false;
+        }
+    }
+
 }

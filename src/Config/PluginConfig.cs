@@ -29,6 +29,7 @@ public sealed class MapNotificationConfig
     public bool ShowPlayerCount { get; set; } = true;
     public bool ShowServerIP { get; set; } = true;
     public int CooldownSeconds { get; set; } = 10;
+    public int RefreshSeconds { get; set; } = 30;
 }
 
 public sealed class ChatRelayConfig
@@ -36,7 +37,7 @@ public sealed class ChatRelayConfig
     public bool Enabled { get; set; } = true;
     public string WebhookUrl { get; set; } = "";
     public bool UseSteamAvatars { get; set; } = true;
-    public string UsernameFormat { get; set; } = "{PlayerName} [{SteamId2}]";
+    public string UsernameFormat { get; set; } = "{PlayerName}";
     public string MessageFormat { get; set; } = "{Message}";
     public string TeamMessageFormat { get; set; } = "(TEAM) {Message}";
     public int CooldownSeconds { get; set; } = 1;
@@ -105,7 +106,7 @@ public class PlayerJoinedConfig
 
     public string LeaveEmbedColor { get; set; } = "#ED4245";
 
-    public bool ShowSteamId { get; set; } = true;
+    public bool ShowSteamId { get; set; } = false;
 
     public bool ShowSteamProfile { get; set; } = true;
 
@@ -118,13 +119,23 @@ public class PlayerJoinedConfig
     public bool ShowDisconnectReason { get; set; } = true;
 }
 
+public sealed class VerificationCommandsConfig
+{
+    public string Link { get; set; } = "link";
+    public List<string> LinkAliases { get; set; } = ["discord", "dc", "verify"];
+    public string Unlink { get; set; } = "unlink";
+    public List<string> UnlinkAliases { get; set; } = ["unverify"];
+}
+
 public sealed class VerificationConfig
 {
+    public string DiscordInvite { get; set; } = "";
     public bool Enabled { get; set; } = false;
     public string BotToken { get; set; } = "";
     public string ChannelId { get; set; } = "";
     public string GuildId { get; set; } = "";
     public string VerifiedRoleId { get; set; } = "";
+    public VerificationCommandsConfig Commands { get; set; } = new();
     public string LinkCommand { get; set; } = "link";
     public string UnlinkCommand { get; set; } = "unlink";
     public int CodeExpiryMinutes { get; set; } = 5;
@@ -135,10 +146,6 @@ public sealed class CommandBlockerConfig
 {
     public bool Enabled { get; set; } = false;
     public List<string> BlockedCommands { get; set; } = ["kill", "explode"];
-    public string BypassPermission { get; set; } = "admin.root";
-    public string BlockedMessage { get; set; } = "[DiscordUtilities] You are not allowed to use this command.";
-    public string WebhookUrl { get; set; } = "";
-    public string EmbedColor { get; set; } = "#ED4245";
 }
 
 public sealed class DiscordRconConfig

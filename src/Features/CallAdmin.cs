@@ -61,7 +61,7 @@ public partial class DiscordUtilities
                             if (IsCallAdminOnCooldown(player, out var remaining))
                             {
                                 var msg = Core.Localizer["calladmin.cooldown", remaining];
-                                player.SendChat(msg);
+                                player.SendChat(WithPrefix(msg));
                                 return HookResult.Handled;
                             }
 
@@ -105,7 +105,7 @@ public partial class DiscordUtilities
                     if (IsCallAdminOnCooldown(player, out var remaining))
                     {
                         var msg = Core.Localizer["calladmin.cooldown", remaining];
-                        player.SendChat(msg);
+                        player.SendChat(WithPrefix(msg));
                         return HookResult.Handled;
                     }
 
@@ -172,13 +172,13 @@ public partial class DiscordUtilities
         if (!reporter.IsValid) return;
 
         var otherPlayers = Core.PlayerManager.GetAllValidPlayers()
-            .Where(p => p.IsValid && p.PlayerID != reporter.PlayerID)
+            .Where(p => p.IsValid && !p.IsFakeClient)
             .ToList();
 
         if (otherPlayers.Count == 0)
         {
             var noPlayersMsg = Core.Localizer["calladmin.no_players"];
-            reporter.SendChat(noPlayersMsg);
+            reporter.SendChat(WithPrefix(noPlayersMsg));
             return;
         }
 
@@ -235,7 +235,7 @@ public partial class DiscordUtilities
         if (IsCallAdminOnCooldown(reporter, out var rem))
         {
             var msg = Core.Localizer["calladmin.cooldown", rem];
-            reporter.SendChat(msg);
+            reporter.SendChat(WithPrefix(msg));
             return;
         }
 
@@ -257,7 +257,7 @@ public partial class DiscordUtilities
                     if (IsCallAdminOnCooldown(ctx.Player, out var remaining))
                     {
                         var msg = Core.Localizer["calladmin.cooldown", remaining];
-                        ctx.Player.SendChat(msg);
+                        ctx.Player.SendChat(WithPrefix(msg));
                         return;
                     }
 
@@ -265,7 +265,7 @@ public partial class DiscordUtilities
                         capturedReason.Title.Contains("Custom", StringComparison.OrdinalIgnoreCase))
                     {
                         var prompt = Core.Localizer["calladmin.custom_prompt", targetName];
-                        ctx.Player.SendChat(prompt);
+                        ctx.Player.SendChat(WithPrefix(prompt));
                     }
                     else
                     {
@@ -300,7 +300,7 @@ public partial class DiscordUtilities
         {
             var potentialTargetName = argParts[0];
             var foundPlayer = Core.PlayerManager.GetAllValidPlayers()
-                .FirstOrDefault(p => p.IsValid && (
+                .FirstOrDefault(p => p.IsValid && !p.IsFakeClient && (
                     p.Name.Contains(potentialTargetName, StringComparison.OrdinalIgnoreCase) ||
                     p.SteamID.ToString() == potentialTargetName ||
                     p.PlayerID.ToString() == potentialTargetName));
@@ -314,6 +314,43 @@ public partial class DiscordUtilities
         }
 
         await SubmitCallAdminReportAsync(reporter, targetName, targetSteamId, reason);
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, DiscordEmbed> _reportMessages = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, byte> _handledReports = new();
+
+    private async Task HandleReportButtonAsync(string customId, string userId, string userName,
+        string interactionId, string interactionToken, string messageId)
+    {
+        if (!long.TryParse(customId["discordutilities:handle:".Length..], out var reportId)) return;
+        if (!_reportMessages.TryGetValue(reportId, out var embed))
+        {
+            await DiscordBotService.AcknowledgeButtonAsync(interactionId, interactionToken,
+                "Report state unavailable after plugin reload.", Core.Logger);
+            return;
+        }
+        if (!_handledReports.TryAdd(reportId, 1))
+        {
+            await DiscordBotService.AcknowledgeButtonAsync(interactionId, interactionToken,
+                "This report is already being handled.", Core.Logger);
+            return;
+        }
+        await DiscordBotService.AcknowledgeButtonAsync(interactionId, interactionToken, null, Core.Logger);
+        var updated = new DiscordEmbed
+        {
+            Title = embed.Title, Description = embed.Description, Color = 0x57F287,
+            Url = embed.Url, Thumbnail = embed.Thumbnail, Image = embed.Image,
+            Footer = embed.Footer, Author = embed.Author, Fields = embed.Fields,
+            Timestamp = embed.Timestamp
+        };
+        updated.AddField(DiscordText.Get("discord.calladmin.status", "Status"),
+            DiscordText.Get("discord.calladmin.handled", "Handled by {0}", $"<@{userId}>"), false);
+        var token = !string.IsNullOrWhiteSpace(Config.Verification.BotToken)
+            ? Config.Verification.BotToken : Config.DiscordToServer.BotToken;
+        var channel = await Webhook.ResolveChannelIdAsync(Config.CallAdmin.WebhookUrl);
+        var saved = await DiscordBotService.UpsertInteractiveEmbedAsync(token, channel ?? "", updated,
+            $"discordutilities:handle:{reportId}", DiscordText.Get("discord.calladmin.handled", "Handled by {0}", userName), messageId);
+        if (saved == null) _handledReports.TryRemove(reportId, out _);
     }
 
     private async Task SubmitCallAdminReportAsync(IPlayer reporter, string targetName, ulong targetSteamId, string reason)
@@ -333,7 +370,7 @@ public partial class DiscordUtilities
                 Core.Scheduler.NextTick(() =>
                 {
                     if (reporter.IsValid)
-                        reporter.SendChat(msg);
+                        reporter.SendChat(WithPrefix(msg));
                 });
                 return;
             }
@@ -344,7 +381,7 @@ public partial class DiscordUtilities
                 Core.Scheduler.NextTick(() =>
                 {
                     if (reporter.IsValid)
-                        reporter.SendChat(msg);
+                        reporter.SendChat(WithPrefix(msg));
                 });
                 return;
             }
@@ -358,12 +395,6 @@ public partial class DiscordUtilities
             var reportId = Interlocked.Increment(ref _reportCounter);
             var serverName = GetServerDisplayName();
             var connectAddress = GetServerConnectAddress();
-            var currentMap = _currentMapName;
-            var cleanMap = currentMap;
-            var lastSlash = currentMap.LastIndexOfAny(['/', '\\']);
-            if (lastSlash >= 0 && lastSlash < currentMap.Length - 1)
-                cleanMap = currentMap[(lastSlash + 1)..];
-
             string? reporterAvatar = null;
             if (reporterSteamId != 0)
                 reporterAvatar = await SteamApi.GetPlayerAvatarAsync(reporterSteamId);
@@ -375,7 +406,7 @@ public partial class DiscordUtilities
             // Construct Discord Embed
             var embed = new DiscordEmbed
             {
-                Title = $"🚨 CallAdmin Report #{reportId}",
+                Title = DiscordText.Get("discord.calladmin.title", "🚨 CallAdmin Report #{0}", reportId),
                 Color = WebhookService.ParseColor(config.EmbedColor),
                 Author = new EmbedAuthor
                 {
@@ -386,29 +417,28 @@ public partial class DiscordUtilities
             };
             embed.WithTimestamp();
 
-            embed.AddField("Reporter", $"**{reporterName}**\n[`{reporterSteamId}`](https://steamcommunity.com/profiles/{reporterSteamId})", true);
+            embed.AddField(DiscordText.Get("discord.calladmin.reporter", "Reporter"), $"**{reporterName}**\n[`{reporterSteamId}`](https://steamcommunity.com/profiles/{reporterSteamId})", true);
 
             if (targetSteamId != 0)
             {
-                embed.AddField("Target", $"**{targetName}**\n[`{targetSteamId}`](https://steamcommunity.com/profiles/{targetSteamId})", true);
+                embed.AddField(DiscordText.Get("discord.calladmin.target", "Target"), $"**{targetName}**\n[`{targetSteamId}`](https://steamcommunity.com/profiles/{targetSteamId})", true);
             }
             else
             {
-                embed.AddField("Target", $"**{targetName}**", true);
+                embed.AddField(DiscordText.Get("discord.calladmin.target", "Target"), $"**{targetName}**", true);
             }
 
-            embed.AddField("Current Map", $"`{cleanMap}`", true);
-            embed.AddField("Report Reason", $"```{reason}```", false);
+            embed.AddField(DiscordText.Get("discord.calladmin.reason", "Report Reason"), $"```{reason}```", false);
 
             if (!string.IsNullOrWhiteSpace(connectAddress))
             {
                 if (isHttpConnect)
                 {
-                    embed.AddField("Quick Connect", $"[👉 Click Here to Connect]({connectAddress})", false);
+                    embed.AddField(DiscordText.Get("discord.calladmin.quick_connect", "🔗 Quick Connect"), $"[{DiscordText.Get("discord.calladmin.connect_link", "👉 Click Here to Connect")}]({connectAddress})", false);
                 }
                 else
                 {
-                    embed.AddField("Quick Connect", $"`connect {connectAddress}`", false);
+                    embed.AddField(DiscordText.Get("discord.calladmin.quick_connect", "🔗 Quick Connect"), $"`connect {connectAddress}`", false);
                 }
             }
 
@@ -433,7 +463,7 @@ public partial class DiscordUtilities
                         [
                             new DiscordComponentButton
                             {
-                                Label = "Connect to Server",
+                                Label = DiscordText.Get("discord.calladmin.connect_button", "Connect to Server"),
                                 Url = buttonUrl,
                                 Emoji = new DiscordEmoji { Name = "🚨" }
                             }
@@ -446,18 +476,23 @@ public partial class DiscordUtilities
                 ? null 
                 : config.MentionRoleOrUser.Trim();
 
-            await Webhook.SendEmbedAsync(
-                config.WebhookUrl, 
-                embed, 
-                username: $"{serverName} CallAdmin",
-                content: mentionContent,
-                components: components);
-
+            _reportMessages[reportId] = embed;
+            var botToken = !string.IsNullOrWhiteSpace(Config.Verification.BotToken)
+                ? Config.Verification.BotToken : Config.DiscordToServer.BotToken;
+            var reportChannel = await Webhook.ResolveChannelIdAsync(config.WebhookUrl);
+            var interactiveMessageId = await DiscordBotService.UpsertInteractiveEmbedAsync(botToken, reportChannel ?? "",
+                embed, $"discordutilities:handle:{reportId}", DiscordText.Get("discord.calladmin.handle", "Handle"));
+            if (interactiveMessageId == null)
+            {
+                Core.Logger.LogWarning("[DiscordUtilities] Report button unavailable: configure a bot token with Send Messages permission. Sending plain webhook report.");
+                await Webhook.SendEmbedAsync(config.WebhookUrl, embed, username: $"{serverName} CallAdmin",
+                    content: string.IsNullOrWhiteSpace(config.MentionRoleOrUser) ? null : config.MentionRoleOrUser.Trim(), components: components);
+            }
             var sentMsg = Core.Localizer["calladmin.sent", config.CooldownSeconds];
             Core.Scheduler.NextTick(() =>
             {
                 if (reporter.IsValid)
-                    reporter.SendChat(sentMsg);
+                    reporter.SendChat(WithPrefix(sentMsg));
             });
             Core.Logger.LogInformation("[DiscordUtilities] CallAdmin Report #{ReportId} sent by {Reporter} against {Target} for: {Reason}",
                 reportId, reporterName, targetName, reason);

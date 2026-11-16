@@ -24,7 +24,7 @@ public sealed class SteamApiService : IDisposable
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "DiscordUtilities-SwiftlyS2/1.0");
 
-        _ = Task.Run(RefreshVauffMapListAsync);
+        // No external map catalog prefetch on startup.
     }
 
     public void SetApiKey(string apiKey) => _apiKey = apiKey;
@@ -77,99 +77,59 @@ public sealed class SteamApiService : IDisposable
 
     public async Task<string?> GetMapImageAsync(string cleanMapName, ulong? workshopId = null)
     {
-        if (string.IsNullOrWhiteSpace(cleanMapName))
-            return null;
+        if (string.IsNullOrWhiteSpace(cleanMapName)) return null;
+        var map = cleanMapName.Trim().ToLowerInvariant();
+        var key = $"{map}:{workshopId}";
+        if (_mapImageResolvedCache.TryGetValue(key, out var cached)) return cached;
 
-        var cacheKey = workshopId.HasValue && workshopId.Value > 0 
-            ? $"ws_{workshopId.Value}_{cleanMapName}" 
-            : cleanMapName;
-
-        if (_mapImageResolvedCache.TryGetValue(cacheKey, out var cachedUrl))
-            return cachedUrl;
-
-        // 1. Workshop is always preferred: use the known ID when present, otherwise search the workshop by name
-        var wsInfo = workshopId.HasValue && workshopId.Value > 0
-            ? await GetWorkshopMapInfoAsync(workshopId.Value)
-            : await SearchWorkshopMapByNameAsync(cleanMapName);
-
-        if (!string.IsNullOrWhiteSpace(wsInfo?.PreviewUrl))
+        // Workshop preview first, if the server exposes the Workshop ID.
+        if (workshopId is > 0)
         {
-            _mapImageResolvedCache[cacheKey] = wsInfo.PreviewUrl;
-            return wsInfo.PreviewUrl;
-        }
-
-        // 2. Fall back to the vauff.com map image database
-        // make sure vauff list is available
-        if (!_vauffListFetched)
-        {
-            await RefreshVauffMapListAsync();
-        }
-
-        var mapLower = cleanMapName.ToLowerInvariant();
-
-        // Check all relevant Source game categories on vauff.com
-        string[] vauffCategories = ["730_cs2", "730_csgo", "240", "4000", "440", "550", "10"];
-        foreach (var category in vauffCategories)
-        {
-            var match = FindBestVauffMatch(category, mapLower);
-            if (!string.IsNullOrWhiteSpace(match))
+            var info = await GetWorkshopMapInfoAsync(workshopId.Value);
+            if (!string.IsNullOrWhiteSpace(info?.PreviewUrl))
             {
-                var url = $"https://vauff.com/mapimgs/{category}/{Uri.EscapeDataString(match)}.jpg";
-                _mapImageResolvedCache[cacheKey] = url;
+                _mapImageResolvedCache[key] = info.PreviewUrl;
+                return info.PreviewUrl;
+            }
+        }
+
+        // Exact map filename first, then a known base map for variants (e.g. de_dust2_classic).
+        // A variant's preview is explicitly a base-map fallback, never claimed to be its own image.
+        var candidates = new List<string> { map };
+        foreach (var baseName in new[] { "de_dust2", "de_mirage", "de_inferno", "de_nuke", "de_ancient", "de_anubis", "de_overpass", "de_vertigo", "de_train", "cs_office", "cs_italy" })
+        {
+            if (map.StartsWith(baseName + "_", StringComparison.Ordinal))
+            {
+                candidates.Add(baseName);
+                break;
+            }
+        }
+        // Exact map filename from the community map-image catalog (supports custom maps).
+        // Do not use its fallback parameter here: that would display a different map as if it were correct.
+        foreach (var candidate in candidates)
+        {
+            if (!candidate.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-')) continue;
+            var catalogUrl = $"https://i.csspanel.dev/maps/{Uri.EscapeDataString(candidate)}?width=800";
+            if (await CheckUrlExistsAsync(catalogUrl))
+            {
+                _mapImageResolvedCache[key] = catalogUrl;
+                return catalogUrl;
+            }
+        }
+
+        // Valve game-depot assets, keyed by exact map filename; no fuzzy matching.
+        // For unknown/custom maps, omit the image rather than display an unrelated one.
+        if ((map.StartsWith("de_", StringComparison.Ordinal) || map.StartsWith("cs_", StringComparison.Ordinal))
+            && map.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'))
+        {
+            var url = $"https://raw.githubusercontent.com/MurkyYT/cs2-map-icons/main/images/{map}.png";
+            if (await CheckUrlExistsAsync(url))
+            {
+                _mapImageResolvedCache[key] = url;
                 return url;
             }
         }
-
-        // Direct HEAD checks across categories for exact map filename
-        foreach (var category in vauffCategories)
-        {
-            var directUrl = $"https://vauff.com/mapimgs/{category}/{Uri.EscapeDataString(mapLower)}.jpg";
-            if (await CheckUrlExistsAsync(directUrl))
-            {
-                _mapImageResolvedCache[cacheKey] = directUrl;
-                return directUrl;
-            }
-        }
-
-        // GameTracker fallback checks across CSS, CS:GO, CS, TF2, GMOD
-        string[] gtGames = ["css", "csgo", "cs", "garrysmod", "tf2", "left4dead2"];
-        foreach (var game in gtGames)
-        {
-            var gtUrl = $"https://image.gametracker.com/images/maps/160x120/{game}/{Uri.EscapeDataString(mapLower)}.jpg";
-            if (await CheckUrlExistsAsync(gtUrl))
-            {
-                _mapImageResolvedCache[cacheKey] = gtUrl;
-                return gtUrl;
-            }
-        }
-
-        // Try stripping standard suffixes (_v1, _v2, _fix, _cs2, _b1, _rc1, etc.) for fallback
-        var baseMapName = System.Text.RegularExpressions.Regex.Replace(mapLower, @"(_v\d+[\w]*|_fix[\w]*|_cs2|_beta[\w]*|_b\d+[\w]*|_rc\d+[\w]*)$", "");
-        if (!string.Equals(baseMapName, mapLower, StringComparison.OrdinalIgnoreCase) && baseMapName.Length > 2)
-        {
-            foreach (var category in vauffCategories)
-            {
-                var match = FindBestVauffMatch(category, baseMapName);
-                if (!string.IsNullOrWhiteSpace(match))
-                {
-                    var url = $"https://vauff.com/mapimgs/{category}/{Uri.EscapeDataString(match)}.jpg";
-                    _mapImageResolvedCache[cacheKey] = url;
-                    return url;
-                }
-            }
-
-            foreach (var game in gtGames)
-            {
-                var gtUrl = $"https://image.gametracker.com/images/maps/160x120/{game}/{Uri.EscapeDataString(baseMapName)}.jpg";
-                if (await CheckUrlExistsAsync(gtUrl))
-                {
-                    _mapImageResolvedCache[cacheKey] = gtUrl;
-                    return gtUrl;
-                }
-            }
-        }
-
-        _mapImageResolvedCache[cacheKey] = null;
+        _mapImageResolvedCache[key] = null;
         return null;
     }
 
@@ -247,9 +207,11 @@ public sealed class SteamApiService : IDisposable
     {
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Head, url);
-            var res = await _httpClient.SendAsync(req);
-            return res.IsSuccessStatusCode;
+            // Some image CDNs reject HEAD but accept GET. Read only headers, not the image body.
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            using var res = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+            return res.IsSuccessStatusCode &&
+                res.Content.Headers.ContentType?.MediaType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true;
         }
         catch
         {
@@ -388,6 +350,7 @@ public sealed class SteamApiService : IDisposable
             var response = await _httpClient.PostAsync(
                 "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/", content);
 
+            response.EnsureSuccessStatusCode();
             var json = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(json);
 
@@ -395,6 +358,8 @@ public sealed class SteamApiService : IDisposable
 
             foreach (var item in details.EnumerateArray())
             {
+                if (item.TryGetProperty("result", out var result) && result.GetInt32() != 1)
+                    continue;
                 var info = new WorkshopMapInfo
                 {
                     WorkshopId = workshopId,
@@ -412,7 +377,6 @@ public sealed class SteamApiService : IDisposable
             _logger.LogError(ex, "[DiscordUtilities] Failed to fetch workshop info for {WorkshopId}", workshopId);
         }
 
-        _workshopCache[workshopId] = null;
         return null;
     }
 

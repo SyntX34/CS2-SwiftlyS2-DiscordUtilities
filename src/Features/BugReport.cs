@@ -61,7 +61,7 @@ public partial class DiscordUtilities
                             if (IsBugReportOnCooldown(player, out var remaining))
                             {
                                 var msg = Core.Localizer["bugreport.cooldown", remaining];
-                                player.SendChat(msg);
+                                player.SendChat(WithPrefix(msg));
                                 return HookResult.Handled;
                             }
 
@@ -105,7 +105,7 @@ public partial class DiscordUtilities
                     if (IsBugReportOnCooldown(player, out var remaining))
                     {
                         var msg = Core.Localizer["bugreport.cooldown", remaining];
-                        player.SendChat(msg);
+                        player.SendChat(WithPrefix(msg));
                         return HookResult.Handled;
                     }
 
@@ -195,7 +195,7 @@ public partial class DiscordUtilities
         if (IsBugReportOnCooldown(player, out var rem))
         {
             var msg = Core.Localizer["bugreport.cooldown", rem];
-            player.SendChat(msg);
+            player.SendChat(WithPrefix(msg));
             return;
         }
 
@@ -218,7 +218,7 @@ public partial class DiscordUtilities
                     if (IsBugReportOnCooldown(ctx.Player, out var remaining))
                     {
                         var msg = Core.Localizer["bugreport.cooldown", remaining];
-                        ctx.Player.SendChat(msg);
+                        ctx.Player.SendChat(WithPrefix(msg));
                         return;
                     }
 
@@ -226,7 +226,7 @@ public partial class DiscordUtilities
                         capturedItem.Title.Contains("Custom", StringComparison.OrdinalIgnoreCase))
                     {
                         var prompt = Core.Localizer["bugreport.custom_prompt"];
-                        ctx.Player.SendChat(prompt);
+                        ctx.Player.SendChat(WithPrefix(prompt));
                     }
                     else
                     {
@@ -246,6 +246,44 @@ public partial class DiscordUtilities
         builder.Build().Open(player);
     }
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, DiscordEmbed> _bugReportMessages = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, byte> _handledBugReports = new();
+
+    private async Task HandleBugReportButtonAsync(string customId, string userId, string userName,
+        string interactionId, string interactionToken, string messageId)
+    {
+        if (!long.TryParse(customId["discordutilities:bughandle:".Length..], out var reportId)) return;
+        if (!_bugReportMessages.TryGetValue(reportId, out var embed))
+        {
+            await DiscordBotService.AcknowledgeButtonAsync(interactionId, interactionToken,
+                DiscordText.Get("discord.bugreport.unavailable", "Report unavailable after plugin restart."), Core.Logger);
+            return;
+        }
+        if (!_handledBugReports.TryAdd(reportId, 1))
+        {
+            await DiscordBotService.AcknowledgeButtonAsync(interactionId, interactionToken,
+                DiscordText.Get("discord.bugreport.already_handled", "This bug report is already handled."), Core.Logger);
+            return;
+        }
+        await DiscordBotService.AcknowledgeButtonAsync(interactionId, interactionToken, null, Core.Logger);
+        var updated = new DiscordEmbed
+        {
+            Title = embed.Title, Description = embed.Description, Color = 0x57F287,
+            Url = embed.Url, Thumbnail = embed.Thumbnail, Image = embed.Image,
+            Footer = embed.Footer, Author = embed.Author, Fields = embed.Fields,
+            Timestamp = embed.Timestamp
+        };
+        updated.AddField(DiscordText.Get("discord.bugreport.status", "Status"),
+            DiscordText.Get("discord.bugreport.handled", "Handled by {0}", $"<@{userId}>"), false);
+        var token = !string.IsNullOrWhiteSpace(Config.Verification.BotToken)
+            ? Config.Verification.BotToken : Config.DiscordToServer.BotToken;
+        var channel = await Webhook.ResolveChannelIdAsync(Config.BugReport.WebhookUrl);
+        var saved = await DiscordBotService.UpsertInteractiveEmbedAsync(token, channel ?? "", updated,
+            $"discordutilities:bughandle:{reportId}",
+            DiscordText.Get("discord.bugreport.handled", "Handled by {0}", userName), messageId);
+        if (saved == null) _handledBugReports.TryRemove(reportId, out _);
+    }
+
     private async Task SubmitBugReportAsync(IPlayer reporter, string reason)
     {
         try
@@ -263,7 +301,7 @@ public partial class DiscordUtilities
                 Core.Scheduler.NextTick(() =>
                 {
                     if (reporter.IsValid)
-                        reporter.SendChat(msg);
+                        reporter.SendChat(WithPrefix(msg));
                 });
                 return;
             }
@@ -274,7 +312,7 @@ public partial class DiscordUtilities
                 Core.Scheduler.NextTick(() =>
                 {
                     if (reporter.IsValid)
-                        reporter.SendChat(msg);
+                        reporter.SendChat(WithPrefix(msg));
                 });
                 return;
             }
@@ -288,7 +326,7 @@ public partial class DiscordUtilities
             var reportId = Interlocked.Increment(ref _bugReportCounter);
             var serverName = GetServerDisplayName();
             var connectAddress = GetServerConnectAddress();
-            var currentMap = _currentMapName;
+            var currentMap = GetCurrentMapDisplayName();
             var cleanMap = currentMap;
             var lastSlash = currentMap.LastIndexOfAny(['/', '\\']);
             if (lastSlash >= 0 && lastSlash < currentMap.Length - 1)
@@ -305,7 +343,7 @@ public partial class DiscordUtilities
             // Construct Discord Embed
             var embed = new DiscordEmbed
             {
-                Title = $"🐛 Bug Report #{reportId}",
+                Title = DiscordText.Get("discord.bugreport.title", "🐛 Bug Report #{0}", reportId),
                 Color = WebhookService.ParseColor(config.EmbedColor),
                 Author = new EmbedAuthor
                 {
@@ -316,19 +354,18 @@ public partial class DiscordUtilities
             };
             embed.WithTimestamp();
 
-            embed.AddField("Reporter", $"**{reporterName}**\n[`{reporterSteamId}`](https://steamcommunity.com/profiles/{reporterSteamId})", true);
-            embed.AddField("Map", $"`{cleanMap}`", true);
-            embed.AddField("Bug Description / Reason", $"```{reason}```", false);
+            embed.AddField(DiscordText.Get("discord.bugreport.reporter", "Reporter"), $"**{reporterName}**\n[`{reporterSteamId}`](https://steamcommunity.com/profiles/{reporterSteamId})", true);
+            embed.AddField(DiscordText.Get("discord.bugreport.reason", "Bug Description / Reason"), $"```{reason}```", false);
 
             if (!string.IsNullOrWhiteSpace(connectAddress))
             {
                 if (isHttpConnect)
                 {
-                    embed.AddField("Quick Connect", $"[👉 Click Here to Connect]({connectAddress})", false);
+                    embed.AddField(DiscordText.Get("discord.bugreport.quick_connect", "Quick Connect"), $"[{DiscordText.Get("discord.bugreport.connect_link", "👉 Click Here to Connect")}]({connectAddress})", false);
                 }
                 else
                 {
-                    embed.AddField("Quick Connect", $"`connect {connectAddress}`", false);
+                    embed.AddField(DiscordText.Get("discord.bugreport.quick_connect", "Quick Connect"), $"`connect {connectAddress}`", false);
                 }
             }
 
@@ -353,7 +390,7 @@ public partial class DiscordUtilities
                         [
                             new DiscordComponentButton
                             {
-                                Label = "Connect to Server",
+                                Label = DiscordText.Get("discord.bugreport.connect_button", "Connect to Server"),
                                 Url = buttonUrl,
                                 Emoji = new DiscordEmoji { Name = "🛠️" }
                             }
@@ -366,18 +403,26 @@ public partial class DiscordUtilities
                 ? null 
                 : config.MentionRoleOrUser.Trim();
 
-            await Webhook.SendEmbedAsync(
-                config.WebhookUrl, 
-                embed, 
-                username: $"{serverName} BugReport",
-                content: mentionContent,
-                components: components);
+            _bugReportMessages[reportId] = embed;
+            var botToken = !string.IsNullOrWhiteSpace(Config.Verification.BotToken)
+                ? Config.Verification.BotToken : Config.DiscordToServer.BotToken;
+            var reportChannel = await Webhook.ResolveChannelIdAsync(config.WebhookUrl);
+            var messageId = await DiscordBotService.UpsertInteractiveEmbedAsync(
+                botToken, reportChannel ?? "", embed, $"discordutilities:bughandle:{reportId}",
+                DiscordText.Get("discord.bugreport.handle", "Handle"));
+            if (messageId == null)
+            {
+                _bugReportMessages.TryRemove(reportId, out _);
+                Core.Logger.LogWarning("[DiscordUtilities] BugReport Handle button unavailable; check bot token and channel permissions.");
+                await Webhook.SendEmbedAsync(config.WebhookUrl, embed,
+                    username: $"{serverName} BugReport", content: mentionContent, components: components);
+            }
 
             var sentMsg = Core.Localizer["bugreport.sent", config.CooldownSeconds];
             Core.Scheduler.NextTick(() =>
             {
                 if (reporter.IsValid)
-                    reporter.SendChat(sentMsg);
+                    reporter.SendChat(WithPrefix(sentMsg));
             });
             Core.Logger.LogInformation("[DiscordUtilities] BugReport #{ReportId} sent by {Reporter} on map {Map}: {Reason}",
                 reportId, reporterName, cleanMap, reason);

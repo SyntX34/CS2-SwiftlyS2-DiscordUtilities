@@ -8,8 +8,15 @@ namespace DiscordUtilities;
 
 public partial class DiscordUtilities
 {
-    private string _currentMapName = "Unknown";
+    private string _currentMapName = "";
     private string _lastNotifiedMap = "";
+    private string? _mapStatusMessageId;
+    private CancellationTokenSource? _mapRefreshCts;
+    private readonly SemaphoreSlim _mapUpdateLock = new(1, 1);
+    private int _cachedPlayerCount;
+    private string _cachedServerName = "CS2 Server";
+    private string _cachedConnectAddress = "";
+    private int _mapRefreshInProgress;
 
     internal void InitializeMapNotification()
     {
@@ -21,6 +28,19 @@ public partial class DiscordUtilities
             return;
         }
 
+        Core.Scheduler.NextTick(() =>
+        {
+            _cachedPlayerCount = GetOnlinePlayerCount();
+            _cachedServerName = GetServerDisplayName();
+            _cachedConnectAddress = GetServerConnectAddress();
+            try
+            {
+                var map = Core.ConVar.FindAsString("mapname")?.ValueAsString;
+                if (!string.IsNullOrWhiteSpace(map)) _currentMapName = map;
+            }
+            catch { }
+        });
+
         Core.Event.OnMapLoad += (@event) =>
         {
             if (!string.IsNullOrWhiteSpace(@event.MapName))
@@ -29,6 +49,9 @@ public partial class DiscordUtilities
                 var isDifferentMap = !string.Equals(_lastNotifiedMap, newMap, StringComparison.OrdinalIgnoreCase);
 
                 _currentMapName = newMap;
+                _cachedPlayerCount = GetOnlinePlayerCount();
+                _cachedServerName = GetServerDisplayName();
+                _cachedConnectAddress = GetServerConnectAddress();
 
                 if (isDifferentMap)
                 {
@@ -49,43 +72,102 @@ public partial class DiscordUtilities
             return HookResult.Continue;
         });
 
+        try { var path = Path.Combine(Core.PluginDataDirectory, "map_status_message_id.txt");
+            if (File.Exists(path)) _mapStatusMessageId = File.ReadAllText(path).Trim(); } catch { }
+        _mapRefreshCts?.Cancel();
+        _mapRefreshCts = new CancellationTokenSource();
+        _ = MapRefreshLoopAsync(_mapRefreshCts.Token);
         Core.Logger.LogInformation("[DiscordUtilities] MapNotification registered");
     }
 
-    private async Task OnMapLoadedAsync(bool isExtension = false)
+    private async Task MapRefreshLoopAsync(CancellationToken ct)
+    {
+        // Based on CS2_Admin DiscordServerStatusService: update one saved message
+        // independently of player presence; game-state snapshots stay on game thread.
+        using var timer = new PeriodicTimer(
+            TimeSpan.FromSeconds(Math.Max(10, Config.MapNotification.RefreshSeconds)));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                if (!Config.MapNotification.Enabled) continue;
+                Core.Scheduler.NextTick(() =>
+                {
+                    _cachedPlayerCount = GetOnlinePlayerCount();
+                    _cachedServerName = GetServerDisplayName();
+                    _cachedConnectAddress = GetServerConnectAddress();
+                });
+                if (Interlocked.Exchange(ref _mapRefreshInProgress, 1) != 0) continue;
+                try
+                {
+                    await OnMapLoadedAsync(forceRefresh: true);
+                    if (Config.Debug)
+                        Core.Logger.LogInformation("[DiscordUtilities] MapNotification periodic status update finished");
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Core.Logger.LogWarning(ex, "[DiscordUtilities] MapNotification periodic status update failed");
+                }
+                finally { Interlocked.Exchange(ref _mapRefreshInProgress, 0); }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            Core.Logger.LogError(ex, "[DiscordUtilities] MapNotification timer stopped unexpectedly");
+        }
+    }
+
+    private string GetCurrentMapDisplayName()
+    {
+        // Map load events provide the exact path (and often Workshop ID).
+        // The convar is a fallback for servers where no map-load event was seen yet.
+        var value = _currentMapName;
+        // Initial map and map-load event populate _currentMapName on game thread.
+        // Never query CS2 convars from the background Discord timer.
+        if (string.IsNullOrWhiteSpace(value) || value.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+            value = _lastNotifiedMap;
+        return string.IsNullOrWhiteSpace(value) ? "Loading..." : value.Trim();
+    }
+
+    private static string CleanMapName(string mapName)
+    {
+        var clean = mapName.Replace('\\', '/').TrimEnd('/');
+        var index = clean.LastIndexOf('/');
+        return index >= 0 ? clean[(index + 1)..] : clean;
+    }
+
+    private ulong ResolveWorkshopId(string fullMapName, string cleanMapName)
+    {
+        var (_, parsedId) = SteamApiService.TryParseWorkshopId(fullMapName);
+        if (parsedId != 0) return parsedId;
+        return 0;
+    }
+
+    private async Task OnMapLoadedAsync(bool isExtension = false, bool forceRefresh = false)
     {
         try
         {
             var config = Config.MapNotification;
 
-            if (Webhook.IsOnCooldown("map_notification", config.CooldownSeconds))
+            if (!forceRefresh && Webhook.IsOnCooldown("map_notification", config.CooldownSeconds))
                 return;
 
-            var mapName = _currentMapName;
-            if (string.IsNullOrWhiteSpace(mapName) || mapName.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
-            {
-                var mapConvar = Core.ConVar.FindAsString("mapname");
-                if (!string.IsNullOrWhiteSpace(mapConvar?.ValueAsString))
-                    mapName = mapConvar.ValueAsString;
-            }
-
-            if (!isExtension && string.Equals(_lastNotifiedMap, mapName, StringComparison.OrdinalIgnoreCase))
+            var mapName = GetCurrentMapDisplayName();
+            if (mapName == "Loading...") return;
+            if (!forceRefresh && !isExtension && string.Equals(_lastNotifiedMap, mapName, StringComparison.OrdinalIgnoreCase))
                 return;
+            var cleanMapName = CleanMapName(mapName);
+            var workshopId = ResolveWorkshopId(mapName, cleanMapName);
+            var isWorkshop = workshopId != 0;
 
-            _lastNotifiedMap = mapName;
+            // The timer may run while the game server is hibernating.
+            // Never enumerate game entities from the background thread.
+            var playerCount = Volatile.Read(ref _cachedPlayerCount);
+            var serverName = _cachedServerName;
+            var connectAddress = _cachedConnectAddress;
 
-            var (isWorkshop, workshopId) = SteamApiService.TryParseWorkshopId(mapName);
-
-            var cleanMapName = mapName;
-            var lastSlash = mapName.LastIndexOfAny(['/', '\\']);
-            if (lastSlash >= 0 && lastSlash < mapName.Length - 1)
-                cleanMapName = mapName[(lastSlash + 1)..];
-
-            var playerCount = GetOnlinePlayerCount();
-            var serverName = GetServerDisplayName();
-            var connectAddress = GetServerConnectAddress();
-
-            var titlePrefix = isExtension ? "⏳ Map Extended" : "🗺️ Map Notification";
+            var titlePrefix = isExtension ? DiscordText.Get("discord.map.extended", "⏳ Map Extended") : DiscordText.Get("discord.map.title", "🗺️ Map Notification");
 
             var embed = new DiscordEmbed
             {
@@ -103,31 +185,20 @@ public partial class DiscordUtilities
                 workshopInfo = await SteamApi.GetWorkshopMapInfoAsync(workshopId);
             }
 
+            var displayMapName = !string.IsNullOrWhiteSpace(workshopInfo?.Title)
+                ? workshopInfo.Title : cleanMapName;
+            embed.AddField(DiscordText.Get("discord.map.current", "📍 Current Map"), $"`{displayMapName}`", true);
             if (isWorkshop && config.ShowWorkshopId)
             {
-                if (workshopInfo != null)
-                {
-                    embed.Title = isExtension ? $"⏳ Map Extended: **{workshopInfo.Title}**" : $"🗺️ Map: **{workshopInfo.Title}**";
-                    embed.Url = workshopInfo.WorkshopUrl;
-                    embed.AddField("Map Name", $"`{cleanMapName}`", true);
-                    embed.AddField("Workshop ID", $"[{workshopId}]({workshopInfo.WorkshopUrl})", true);
-                }
-                else
-                {
-                    embed.AddField("Map Name", $"`{cleanMapName}`", true);
-                    embed.AddField("Workshop ID", workshopId.ToString(), true);
-                }
-
-                mapImageUrl = await SteamApi.GetMapImageAsync(cleanMapName, workshopId);
+                var workshopUrl = workshopInfo?.WorkshopUrl ?? $"https://steamcommunity.com/sharedfiles/filedetails/?id={workshopId}";
+                embed.Url = workshopUrl;
+                embed.AddField(DiscordText.Get("discord.map.workshop_id", "Workshop ID"), $"[{workshopId}]({workshopUrl})", true);
             }
-            else
-            {
-                embed.AddField("Current Map", $"`{cleanMapName}`", true);
-                mapImageUrl = await SteamApi.GetMapImageAsync(cleanMapName, isWorkshop ? workshopId : null);
-            }
+            mapImageUrl = await SteamApi.GetMapImageAsync(cleanMapName, isWorkshop ? workshopId : null);
+            // If no map preview is available, show the configured community banner as the main image.
 
             if (config.ShowPlayerCount)
-                embed.AddField("Players Online", $"{playerCount}", true);
+                embed.AddField(DiscordText.Get("discord.map.players", "👥 Players Online"), $"{playerCount}", true);
 
             var isHttpConnect = !string.IsNullOrWhiteSpace(connectAddress) &&
                                 (connectAddress.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
@@ -137,11 +208,11 @@ public partial class DiscordUtilities
             {
                 if (isHttpConnect)
                 {
-                    embed.AddField("Quick Connect", $"[👉 Click Here to Connect]({connectAddress})", false);
+                    embed.AddField(DiscordText.Get("discord.map.quick_connect", "🔗 Quick Connect"), $"[👉 Click Here to Connect]({connectAddress})", false);
                 }
                 else
                 {
-                    embed.AddField("Quick Connect", $"`connect {connectAddress}`", false);
+                    embed.AddField(DiscordText.Get("discord.map.quick_connect", "🔗 Quick Connect"), $"`connect {connectAddress}`", false);
                 }
             }
 
@@ -152,9 +223,10 @@ public partial class DiscordUtilities
             }
 
             // Main Image (Map Image)
-            if (!string.IsNullOrWhiteSpace(mapImageUrl))
+            var mainImageUrl = !string.IsNullOrWhiteSpace(mapImageUrl) ? mapImageUrl : config.BannerUrl;
+            if (!string.IsNullOrWhiteSpace(mainImageUrl))
             {
-                embed.Image = new EmbedImage { Url = mapImageUrl };
+                embed.Image = new EmbedImage { Url = mainImageUrl };
             }
 
             // Action Row Buttons (Connect Now & Steam Workshop Link)
@@ -177,7 +249,7 @@ public partial class DiscordUtilities
 
                 buttons.Add(new DiscordComponentButton
                 {
-                    Label = "Connect Now",
+                    Label = DiscordText.Get("discord.map.connect_now", "Connect Now"),
                     Url = buttonUrl,
                     Emoji = new DiscordEmoji { Name = "🎮" }
                 });
@@ -188,7 +260,7 @@ public partial class DiscordUtilities
                 var wsUrl = workshopInfo?.WorkshopUrl ?? $"https://steamcommunity.com/sharedfiles/filedetails/?id={workshopId}";
                 buttons.Add(new DiscordComponentButton
                 {
-                    Label = "Workshop Page",
+                    Label = DiscordText.Get("discord.map.workshop_page", "Workshop Page"),
                     Url = wsUrl,
                     Emoji = new DiscordEmoji { Name = "🗺️" }
                 });
@@ -205,7 +277,21 @@ public partial class DiscordUtilities
                 ];
             }
 
-            await Webhook.SendEmbedAsync(config.WebhookUrl, embed, username: serverName, components: components);
+            await _mapUpdateLock.WaitAsync();
+            try
+            {
+                var id = await Webhook.UpsertEmbedAsync(config.WebhookUrl, embed, _mapStatusMessageId, username: serverName, components: components);
+                if (id == null && _mapStatusMessageId != null)
+                    Core.Logger.LogWarning("[DiscordUtilities] Could not update or recreate map status message {MessageId}; keeping saved ID until a successful update", _mapStatusMessageId);
+                if (id != null)
+                {
+                    _lastNotifiedMap = mapName;
+                    _mapStatusMessageId = id;
+                    try { Directory.CreateDirectory(Core.PluginDataDirectory);
+                        File.WriteAllText(Path.Combine(Core.PluginDataDirectory, "map_status_message_id.txt"), id); } catch { }
+                }
+            }
+            finally { _mapUpdateLock.Release(); }
         }
         catch (Exception ex)
         {
@@ -217,7 +303,7 @@ public partial class DiscordUtilities
     {
         try
         {
-            return Core.PlayerManager.GetAllValidPlayers().Count();
+            return Core.PlayerManager.GetAllValidPlayers().Count(player => player.IsValid && !player.IsFakeClient);
         }
         catch
         {

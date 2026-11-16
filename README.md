@@ -5,7 +5,7 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/SyntX34/CS2-SwiftlyS2-DiscordUtilities/releases"><img src="https://img.shields.io/badge/version-1.1.4-blue.svg" alt="Version"></a>
+  <a href="https://github.com/SyntX34/CS2-SwiftlyS2-DiscordUtilities/releases"><img src="https://img.shields.io/badge/version-latest-blue.svg" alt="Version"></a>
   <a href="https://github.com/swiftly-solution/swiftlys2"><img src="https://img.shields.io/badge/framework-SwiftlyS2-orange.svg" alt="Framework"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
 </p>
@@ -16,12 +16,12 @@
 |---------|-------------|---------|
 | 🗺️ **Map Notifications** | Rich embeds on map change — workshop detection, preview images from Steam API, player count, custom banners | Separate webhook |
 | 💬 **Chat Relay** | Server chat → Discord with player Steam avatars, per-player cooldowns, command filtering | Separate webhook |
-| 🔒 **Admin Logs** | Logs admin commands (ban/kick/mute/slap/map changes/cvar/rcon) with categorized embeds, ignores server console spam | Separate webhook |
+| 🔒 **Admin Logs** | Logs admin commands (ban/kick/mute/slap/map changes/cvar/rcon) as compact one-line Discord messages, with optional console filtering | Separate webhook |
 | 🚨 **CallAdmin** | In-game player reporting (`!calladmin`, `!report`, `sw_calladmin`) to Discord with target detection, cooldowns, and role pings | Separate webhook |
 | 🐛 **Bug Report** | In-game bug reporting menu (`!bug`, `!bugreport`) with customizable preconfigured reasons (`bug_reasons.jsonc`) & custom details | Separate webhook |
-| 🔄 **Discord → Server** | *(Phase 2)* Relay Discord messages into the game server — requires bot token | Separate channel |
-| 🔗 **Verification (Linking)** | Link Steam accounts to Discord via `!link` / `!verify` codes, with optional Discord role assignment & webhook logs | Bot channel / Webhook |
-| 🚫 **Command Blocker** | Block specified client commands with permission bypass support and optional Discord webhook alerts | Separate webhook |
+| 🔄 **Discord → Server** | Relay Discord channel messages into in-game chat — requires bot token and channel ID | Separate channel |
+| 🔗 **Verification (Linking)** | Link Steam accounts to Discord via `!link` / `!verify` codes, with Discord role assignment, persistent links, and an interactive verification panel | Bot channel / Webhook |
+| 🚫 **Command Blocker** | Block specified client commands until the player links their Steam and Discord accounts | Separate webhook |
 | 🖥️ **Discord RCON** | Execute server console commands (e.g. mute, gag, kick, ban) directly from Discord for authorized user IDs | Bot channel |
 
 ### Feature Previews
@@ -30,7 +30,7 @@
 <summary><b>🗺️ Map Change Notifications</b></summary>
 <br>
 
-Rich embed notification sent automatically whenever the server changes map. Automatically fetches and displays the official Steam Workshop thumbnail or fallback banner, along with server connection info, workshop ID, and player statistics.
+One continuously updated Discord status message (30-second refresh by default) with the current map, player count, and connection details. Uses map artwork when available and falls back to the configured banner.
 
 <p align="center">
   <a href="readme/images/map_notification.png" target="_blank">
@@ -56,7 +56,7 @@ Live server chat relayed straight to Discord using player Steam profile avatars 
 <summary><b>🔒 Admin Action Logs</b></summary>
 <br>
 
-Comprehensive administrative logging that captures moderation actions (bans, kicks, mutes, slaps), map switching, ConVar modifications, and RCON executions with color-coded embed alerts and execution details.
+Compact, single-line admin command logs with no large embed or Steam profile preview. Command categories and message text are translatable.
 
 <p align="center">
   <a href="readme/images/admin_logs.png" target="_blank">
@@ -69,7 +69,7 @@ Comprehensive administrative logging that captures moderation actions (bans, kic
 <summary><b>🚨 CallAdmin & Player Reports</b></summary>
 <br>
 
-Allows players to call server administrators directly to Discord via `!calladmin` or `!report`. Features an interactive SwiftlyS2 in-game menu to select players and reasons (configured in `calladmin_reasons.jsonc`), cooldown limits, role mentions (`@here` / role IDs), and one-click direct connect links for admins.
+Allows players to call server administrators directly to Discord via `!calladmin` or `!report`. Features an interactive SwiftlyS2 in-game menu to select players and reasons (configured in `calladmin_reasons.jsonc`), cooldown limits, role mentions (`@here` / role IDs), one-click server connection details, and a Handle button.
 
 <p align="center">
   <a href="readme/images/calladmin.png" target="_blank">
@@ -82,7 +82,7 @@ Allows players to call server administrators directly to Discord via `!calladmin
 <summary><b>🐛 Bug & Issue Reporting</b></summary>
 <br>
 
-In-game reporting system via `!bug` or `!bugreport`. Players can choose from preconfigured bug categories (`bug_reasons.jsonc`) or submit custom issue descriptions with map information and player data dispatched straight to Discord.
+In-game reporting system via `!bug` or `!bugreport`. Players can choose from preconfigured bug categories (`bug_reasons.jsonc`) or submit custom issue descriptions directly to Discord. Reports include a Handle button for staff.
 
 <p align="center">
   <a href="readme/images/bugreport.png" target="_blank">
@@ -96,6 +96,8 @@ In-game reporting system via `!bug` or `!bugreport`. Players can choose from pre
 - **SwiftlyS2** framework installed on your CS2 server
 - **Steam Web API Key** — [Get one here](https://steamcommunity.com/dev/apikey) (for player avatars & workshop map images)
 - **Discord Webhook URLs** — Create webhooks in your Discord server channel settings
+- **Discord bot token** — Needed for Discord → Server, verification, and Discord RCON features
+- **MySQL connection** — Configure SwiftlyS2 `mysql_detailed` for persistent Steam–Discord account links
 
 ## Installation
 
@@ -110,7 +112,7 @@ In-game reporting system via `!bug` or `!bugreport`. Players can choose from pre
 
 ## Configuration
 
-The plugin uses **JSONC** (JSON with Comments) for configuration, auto-generated on first run. All settings support **hot-reload** — edit the file and changes apply immediately.
+The plugin uses **JSONC** (JSON with Comments) for configuration, auto-generated on first run. Some settings may require a plugin reload, particularly bot and verification settings.
 
 ### Key Settings
 
@@ -151,7 +153,7 @@ The plugin uses **JSONC** (JSON with Comments) for configuration, auto-generated
     "AdminLogs": {
       "Enabled": true,
       "WebhookUrl": "https://discord.com/api/webhooks/...",
-      // Optional banner image URL shown in admin log embeds
+      // Retained setting; admin logs are sent as compact text messages
       "BannerUrl": "",
       "EmbedColor": "#ED4245",
       // Set to true to skip commands executed by server console/server scripts
@@ -199,6 +201,13 @@ Each feature uses its own webhook URL, so you can route notifications to differe
 - `#bug-reports` — Bug & issue reports
 
 
+
+### Additional Features
+
+- **Verification:** Players use `!link` (or configured aliases) to receive a code and complete linking through a Discord button/modal. `!unlink` removes the link and the configured verified role. Set `Verification.VerifiedRoleId`, `GuildId`, `BotToken`, and `ChannelId` as needed; linked accounts are stored using SwiftlyS2's `mysql_detailed` database connection.
+- **Discord → Server:** Relays messages from the configured Discord channel into CS2 chat. Configure `DiscordToServer.BotToken` and `ChannelId`.
+- **Command Blocker:** Restricts configured commands until the player's Steam account is linked.
+- **Translations:** Game and Discord messages use the SwiftlyS2 Core language (`resources/translations/<language>.jsonc`), falling back to English for missing keys.
 
 ## Building
 
