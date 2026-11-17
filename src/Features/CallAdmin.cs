@@ -316,20 +316,24 @@ public partial class DiscordUtilities
         await SubmitCallAdminReportAsync(reporter, targetName, targetSteamId, reason);
     }
 
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, DiscordEmbed> _reportMessages = new();
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, byte> _handledReports = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _handledReports = new();
 
     private async Task HandleReportButtonAsync(string customId, string userId, string userName,
         string interactionId, string interactionToken, string messageId)
     {
         if (!long.TryParse(customId["discordutilities:handle:".Length..], out var reportId)) return;
-        if (!_reportMessages.TryGetValue(reportId, out var embed))
+        var token = !string.IsNullOrWhiteSpace(Config.Verification.BotToken)
+            ? Config.Verification.BotToken : Config.DiscordToServer.BotToken;
+        var channel = await Webhook.ResolveChannelIdAsync(Config.CallAdmin.WebhookUrl);
+        var embed = await DiscordBotService.GetInteractiveReportEmbedAsync(token, channel ?? "", messageId,
+            $"discordutilities:handle:{reportId}", Core.Logger);
+        if (embed == null)
         {
             await DiscordBotService.AcknowledgeButtonAsync(interactionId, interactionToken,
-                "Report state unavailable after plugin reload.", Core.Logger);
+                "This report is already handled or could not be loaded from Discord.", Core.Logger);
             return;
         }
-        if (!_handledReports.TryAdd(reportId, 1))
+        if (!_handledReports.TryAdd(messageId, 1))
         {
             await DiscordBotService.AcknowledgeButtonAsync(interactionId, interactionToken,
                 "This report is already being handled.", Core.Logger);
@@ -345,12 +349,9 @@ public partial class DiscordUtilities
         };
         updated.AddField(DiscordText.Get("discord.calladmin.status", "Status"),
             DiscordText.Get("discord.calladmin.handled", "Handled by {0}", $"<@{userId}>"), false);
-        var token = !string.IsNullOrWhiteSpace(Config.Verification.BotToken)
-            ? Config.Verification.BotToken : Config.DiscordToServer.BotToken;
-        var channel = await Webhook.ResolveChannelIdAsync(Config.CallAdmin.WebhookUrl);
         var saved = await DiscordBotService.UpsertInteractiveEmbedAsync(token, channel ?? "", updated,
-            $"discordutilities:handle:{reportId}", DiscordText.Get("discord.calladmin.handled", "Handled by {0}", userName), messageId);
-        if (saved == null) _handledReports.TryRemove(reportId, out _);
+            $"discordutilities:handle:{reportId}", DiscordText.Get("discord.calladmin.handled", "Handled by {0}", userName), messageId, disableButton: true);
+        if (saved == null) _handledReports.TryRemove(messageId, out _);
     }
 
     private async Task SubmitCallAdminReportAsync(IPlayer reporter, string targetName, ulong targetSteamId, string reason)
@@ -474,19 +475,20 @@ public partial class DiscordUtilities
 
             string? mentionContent = string.IsNullOrWhiteSpace(config.MentionRoleOrUser) 
                 ? null 
-                : config.MentionRoleOrUser.Trim();
-
-            _reportMessages[reportId] = embed;
+                : ulong.TryParse(config.MentionRoleOrUser.Trim(), out _)
+                    ? $"<@&{config.MentionRoleOrUser.Trim()}>"
+                    : config.MentionRoleOrUser.Trim();
             var botToken = !string.IsNullOrWhiteSpace(Config.Verification.BotToken)
                 ? Config.Verification.BotToken : Config.DiscordToServer.BotToken;
             var reportChannel = await Webhook.ResolveChannelIdAsync(config.WebhookUrl);
             var interactiveMessageId = await DiscordBotService.UpsertInteractiveEmbedAsync(botToken, reportChannel ?? "",
-                embed, $"discordutilities:handle:{reportId}", DiscordText.Get("discord.calladmin.handle", "Handle"));
+                embed, $"discordutilities:handle:{reportId}", DiscordText.Get("discord.calladmin.handle", "Handle"),
+                content: mentionContent);
             if (interactiveMessageId == null)
             {
                 Core.Logger.LogWarning("[DiscordUtilities] Report button unavailable: configure a bot token with Send Messages permission. Sending plain webhook report.");
                 await Webhook.SendEmbedAsync(config.WebhookUrl, embed, username: $"{serverName} CallAdmin",
-                    content: string.IsNullOrWhiteSpace(config.MentionRoleOrUser) ? null : config.MentionRoleOrUser.Trim(), components: components);
+                    content: mentionContent, components: components);
             }
             var sentMsg = Core.Localizer["calladmin.sent", config.CooldownSeconds];
             Core.Scheduler.NextTick(() =>
