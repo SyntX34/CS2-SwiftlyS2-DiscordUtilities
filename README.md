@@ -5,7 +5,7 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/SyntX34/CS2-SwiftlyS2-DiscordUtilities/releases"><img src="https://img.shields.io/badge/version-latest-blue.svg" alt="Version"></a>
+  <a href="https://github.com/SyntX34/CS2-SwiftlyS2-DiscordUtilities/releases"><img src="https://img.shields.io/badge/version-1.1.6-blue.svg" alt="Version"></a>
   <a href="https://github.com/swiftly-solution/swiftlys2"><img src="https://img.shields.io/badge/framework-SwiftlyS2-orange.svg" alt="Framework"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
 </p>
@@ -114,49 +114,62 @@ In-game reporting system via `!bug` or `!bugreport`. Players can choose from pre
 
 The plugin uses **JSONC** (JSON with Comments) for configuration, auto-generated on first run. Some settings may require a plugin reload, particularly bot and verification settings.
 
-### Key Settings
+### Configuration example
+
+This example includes all settings from the current configuration model. Set webhook URLs, bot credentials, and IDs for the features you enable. The plugin also generates `config.jsonc` automatically on first start.
 
 ```jsonc
 {
   "DiscordUtilities": {
-    // Steam Web API key (required for avatars & workshop images)
-    "SteamApiKey": "YOUR_STEAM_API_KEY",
-    // Server display name (leave empty to auto-detect from hostname convar)
+    "Debug": false,
+    "SteamApiKey": "",
     "ServerName": "",
-    // Server IP:port (leave empty to auto-detect from ip + hostport convars)
     "ServerIP": "",
-    // Override DNS / domain connect address (e.g. "zm.novazombie.com")
-    "ServerDNS": "zm.novazombie.com",
-
+    "ServerDNS": "",
     "MapNotification": {
       "Enabled": true,
-      "WebhookUrl": "https://discord.com/api/webhooks/...",
-      // Optional banner image URL (fallback if map has no workshop image)
+      "WebhookUrl": "",
       "BannerUrl": "",
       "EmbedColor": "#5865F2",
       "ShowWorkshopId": true,
       "ShowPlayerCount": true,
       "ShowServerIP": true,
-      "CooldownSeconds": 10
+      "CooldownSeconds": 10,
+      "RefreshSeconds": 30
     },
-
     "ChatRelay": {
       "Enabled": true,
-      "WebhookUrl": "https://discord.com/api/webhooks/...",
-      "BannerUrl": "",
+      "WebhookUrl": "",
       "UseSteamAvatars": true,
+      "UsernameFormat": "{PlayerName}",
+      "MessageFormat": "{Message}",
+      "TeamMessageFormat": "(TEAM) {Message}",
       "CooldownSeconds": 1,
       "IgnoreCommands": true,
+      "IgnoredPrefixes": [
+        "!",
+        "/",
+        "rtv",
+        "nominate",
+        "nextmap",
+        "timeleft",
+        "currentmap"
+      ],
       "IgnoreTeamChat": false
     },
-
+    "DiscordToServer": {
+      "Enabled": false,
+      "BotToken": "",
+      "ChannelId": "",
+      "ChatPrefix": "[Discord]",
+      "ChatColor": "#7289DA",
+      "TagFormat": "{ChatPrefix} {DiscordName}: {Message}"
+    },
     "AdminLogs": {
       "Enabled": true,
-      "WebhookUrl": "https://discord.com/api/webhooks/...",
-      // Retained setting; admin logs are sent as compact text messages
+      "WebhookUrl": "",
       "BannerUrl": "",
       "EmbedColor": "#ED4245",
-      // Set to true to skip commands executed by server console/server scripts
       "IgnoreConsole": true,
       "LogCommands": true,
       "LogMapChanges": true,
@@ -164,31 +177,83 @@ The plugin uses **JSONC** (JSON with Comments) for configuration, auto-generated
       "LogRcon": true,
       "CooldownSeconds": 2
     },
-
     "CallAdmin": {
       "Enabled": true,
-      "WebhookUrl": "https://discord.com/api/webhooks/...",
-      // Mention admin role or user (e.g. "<@&ROLE_ID>" or "@here")
+      "WebhookUrl": "",
       "MentionRoleOrUser": "",
       "BannerUrl": "",
       "EmbedColor": "#FFA500",
+      "MenuTitle": "CallAdmin - Select Player / Reason",
       "CooldownSeconds": 30,
       "MinimumReasonLength": 3
     },
-
     "BugReport": {
       "Enabled": true,
-      "WebhookUrl": "https://discord.com/api/webhooks/...",
+      "WebhookUrl": "",
       "MentionRoleOrUser": "",
       "BannerUrl": "",
       "EmbedColor": "#FFFF00",
       "MenuTitle": "Report a Bug / Issue",
       "CooldownSeconds": 30,
       "MinimumReasonLength": 3
+    },
+    "PlayerJoined": {
+      "Enabled": false,
+      "WebhookUrl": "",
+      "CooldownSeconds": 2,
+      "JoinEmbedColor": "#57F287",
+      "LeaveEmbedColor": "#ED4245",
+      "ShowSteamId": false,
+      "ShowSteamProfile": true,
+      "ShowPlayerCount": true,
+      "ShowPlayerSlot": false,
+      "ShowConnectionTime": true,
+      "ShowDisconnectReason": true
+    },
+    "Verification": {
+      "DiscordInvite": "",
+      "Enabled": false,
+      "BotToken": "",
+      "ChannelId": "",
+      "GuildId": "",
+      "VerifiedRoleId": "",
+      "Commands": {
+        "Link": "link",
+        "LinkAliases": [
+          "discord",
+          "dc",
+          "verify"
+        ],
+        "Unlink": "unlink",
+        "UnlinkAliases": [
+          "unverify"
+        ]
+      },
+      "LinkCommand": "link",
+      "UnlinkCommand": "unlink",
+      "CodeExpiryMinutes": 5,
+      "WebhookUrl": ""
+    },
+    "CommandBlocker": {
+      "Enabled": false,
+      "BlockedCommands": [
+        "kill",
+        "explode"
+      ]
+    },
+    "DiscordRcon": {
+      "Enabled": false,
+      "BotToken": "",
+      "ChannelId": "",
+      "CommandPrefix": "!rcon ",
+      "ConsoleMessageFormat": "[red][Console]: [red]{Message}[default]",
+      "AllowedDiscordUserIds": []
     }
   }
 }
 ```
+
+For CallAdmin and BugReport role mentions, set `MentionRoleOrUser` to `<@&ROLE_ID>` (not just the numeric ID). The bot must have permission to mention that role, or the role must be mentionable. The **Handle** button retrieves the existing Discord message, so it also works after a plugin/server restart.
 
 ### Per-Feature Webhooks
 
