@@ -28,14 +28,20 @@ public partial class DiscordUtilities
 
         _chatHookGuid = Core.Command.HookClientChat((playerId, text, teamonly) =>
         {
-            _ = Task.Run(() => OnPlayerChatAsync(playerId, text, teamonly));
+            var player = Core.PlayerManager.GetPlayer(playerId);
+            if (player == null || !player.IsValid || player.IsFakeClient) return HookResult.Continue;
+            var name = player.Name;
+            var steam = player.SteamID;
+            var ip = player.IPAddress;
+            var team = (int)(player.Controller?.TeamNum ?? 0);
+            _ = OnPlayerChatAsync(name, steam, ip, text, teamonly, team);
             return HookResult.Continue;
         });
 
         Core.Logger.LogInformation("[DiscordUtilities] ChatRelay registered via HookClientChat");
     }
 
-    private async Task OnPlayerChatAsync(int playerId, string text, bool teamOnly)
+    private async Task OnPlayerChatAsync(string playerName, ulong steamId64, string? ip, string text, bool teamOnly, int team)
     {
         try
         {
@@ -61,9 +67,7 @@ public partial class DiscordUtilities
                 }
             }
 
-            var player = Core.PlayerManager.GetPlayer(playerId);
-            var playerName = player?.Name ?? $"Player #{playerId}";
-            ulong steamId64 = player?.SteamID ?? 0;
+
 
             if (config.CooldownSeconds > 0 && steamId64 != 0)
             {
@@ -80,22 +84,17 @@ public partial class DiscordUtilities
                 avatarUrl = await SteamApi.GetPlayerAvatarAsync(steamId64);
 
             var steamId2 = ConvertSteamId64ToSteamId2(steamId64);
+            var country = await DiscordPlayerFormat.LookupCountryAsync(ip);
+            var linkedName = DiscordPlayerFormat.PlayerLink(playerName, steamId64, country);
 
-            var webhookUsername = config.UsernameFormat
-                .Replace("{PlayerName}", playerName)
-                .Replace("{SteamId2}", steamId2)
-                .Replace("{SteamId64}", steamId64.ToString())
-                .Replace("{Team}", teamOnly ? "[TEAM]" : "");
-
-            var format = teamOnly 
-                ? (string.IsNullOrWhiteSpace(config.TeamMessageFormat) ? "(TEAM) {Message}" : config.TeamMessageFormat)
-                : (string.IsNullOrWhiteSpace(config.MessageFormat) ? "{Message}" : config.MessageFormat);
-
-            var formattedMessage = format
-                .Replace("{PlayerName}", playerName)
-                .Replace("{SteamId2}", steamId2)
-                .Replace("{SteamId64}", steamId64.ToString())
-                .Replace("{Message}", text);
+            var teamTag = team switch
+            {
+                2 => "[T]", 3 => "[CT]", 1 => "[SPEC]", _ => "[SPEC]"
+            };
+            var formattedMessage = $"{teamTag} {linkedName}: {text}";
+            if (teamOnly) formattedMessage = $"{teamTag} {linkedName} (TEAM): {text}";
+            // Webhook username is the configured bot/server identity, never a second player name.
+            var webhookUsername = GetServerDisplayName();
 
             // Send clean Discord message (no embed banner, pure webhook format)
             await Webhook.SendMessageAsync(

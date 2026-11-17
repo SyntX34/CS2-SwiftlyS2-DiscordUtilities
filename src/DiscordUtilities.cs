@@ -12,7 +12,7 @@ namespace DiscordUtilities;
 [PluginMetadata
     (
         Id = "DiscordUtilities",
-        Version = "1.1.4",
+        Version = "1.1.5",
         Name = "Discord Utilities",
         Author = "SyntX34",
         Description = "Discord integration for CS2: map notifications, chat relay, admin logs, calladmin, bugreport, player join/disconnect, verification, command blocker, and Discord RCON."
@@ -41,6 +41,9 @@ public partial class DiscordUtilities : BasePlugin
 
         Webhook = new WebhookService(Core.Logger);
         SteamApi = new SteamApiService(Core.Logger);
+
+        DiscordText.SetCoreTranslator((key, args) =>
+            args.Length == 0 ? Core.Localizer[key].ToString() : Core.Localizer[key, args].ToString());
 
         LoadPluginConfig();
         SetupConfigFileWatcher();
@@ -75,6 +78,8 @@ public partial class DiscordUtilities : BasePlugin
         else
         {
             DiscordBot?.Stop();
+            if (Config.DiscordToServer.Enabled)
+                Core.Logger.LogWarning("[DiscordUtilities] DiscordToServer cannot start: BotToken or ChannelId is missing.");
         }
     }
 
@@ -92,15 +97,14 @@ public partial class DiscordUtilities : BasePlugin
             {
                 try
                 {
-                    Core.PlayerManager.SendChat(formatted);
-                }
-                catch
-                {
                     foreach (var p in Core.PlayerManager.GetAllValidPlayers())
                     {
-                        if (p.IsValid)
-                            p.SendChat(formatted);
+                        if (p.IsValid) p.SendChat(formatted);
                     }
+                }
+                catch (Exception ex)
+                {
+                    Core.Logger.LogError(ex, "[DiscordUtilities] DiscordToServer chat broadcast failed");
                 }
             });
         }
@@ -173,7 +177,10 @@ public partial class DiscordUtilities : BasePlugin
                 {
                     Task.Delay(500).ContinueWith(_ =>
                     {
-                        LoadPluginConfig();
+                        DiscordText.SetCoreTranslator((key, args) =>
+            args.Length == 0 ? Core.Localizer[key].ToString() : Core.Localizer[key, args].ToString());
+
+        LoadPluginConfig();
                         InitializeDiscordToServer();
                         Core.Logger.LogInformation("[DiscordUtilities] Configuration hot-reloaded from disk.");
                     });
@@ -288,6 +295,8 @@ public partial class DiscordUtilities : BasePlugin
     public override void Unload()
     {
         _configWatcher?.Dispose();
+        _mapRefreshCts?.Cancel();
+        _mapRefreshCts?.Dispose();
         DiscordBot?.Dispose();
         _verificationBot?.Dispose();
         _rconBot?.Dispose();

@@ -42,6 +42,19 @@ public sealed class WebhookService : IDisposable
         }
     }
 
+    public async Task<string?> ResolveChannelIdAsync(string webhookUrl)
+    {
+        if (string.IsNullOrWhiteSpace(webhookUrl)) return null;
+        try
+        {
+            using var response = await _httpClient.GetAsync(webhookUrl.Split('?')[0]);
+            if (!response.IsSuccessStatusCode) return null;
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            return doc.RootElement.TryGetProperty("channel_id", out var id) ? id.GetString() : null;
+        }
+        catch (Exception ex) { _logger.LogWarning(ex, "[DiscordUtilities] Could not resolve webhook channel"); return null; }
+    }
+
     public bool IsOnCooldown(string key, int cooldownSeconds)
     {
         if (cooldownSeconds <= 0) return false;
@@ -85,6 +98,50 @@ public sealed class WebhookService : IDisposable
         };
 
         await SendPayloadAsync(webhookUrl, payload);
+    }
+
+    // Webhook URLs remain the only destination configuration; wait=true returns a message ID for edits.
+    public async Task<string?> UpsertEmbedAsync(string webhookUrl, DiscordEmbed embed, string? messageId,
+        string? username = null, string? content = null, List<DiscordComponentActionRow>? components = null)
+    {
+        if (string.IsNullOrWhiteSpace(webhookUrl)) return null;
+        var payload = new WebhookPayload { Embeds = [embed], Username = username, Content = content, Components = components };
+        try
+        {
+            var url = messageId == null
+                ? webhookUrl + (webhookUrl.Contains('?') ? "&wait=true" : "?wait=true")
+                : webhookUrl.Split('?')[0].TrimEnd('/') + "/messages/" + Uri.EscapeDataString(messageId) + "?wait=true";
+            using var request = new HttpRequestMessage(messageId == null ? HttpMethod.Post : HttpMethod.Patch, url);
+            request.Content = new StringContent(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
+            using var response = await _httpClient.SendAsync(request);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound && messageId != null)
+            {
+                // The saved status message was deleted. Create a fresh one and persist its new ID.
+                _logger.LogInformation("[DiscordUtilities] Saved map status message {MessageId} no longer exists; creating a new message", messageId);
+                return await UpsertEmbedAsync(webhookUrl, embed, null, username, content, components);
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("[DiscordUtilities] Webhook upsert failed ({Status})", response.StatusCode);
+                return null;
+            }
+            // Discord webhook PATCH may succeed with HTTP 204 No Content.
+            // A successful edit must keep the saved ID even if no JSON body is returned.
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+                return messageId;
+
+            var responseBody = await response.Content.ReadAsStringAsync();
+            if (string.IsNullOrWhiteSpace(responseBody))
+                return messageId;
+
+            using var doc = JsonDocument.Parse(responseBody);
+            return doc.RootElement.TryGetProperty("id", out var id) ? id.GetString() : messageId;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[DiscordUtilities] Webhook upsert failed");
+            return null;
+        }
     }
 
     private async Task SendPayloadAsync(string webhookUrl, WebhookPayload payload)
@@ -178,7 +235,10 @@ public sealed class DiscordComponentButton
     public string Label { get; set; } = "";
 
     [JsonPropertyName("url")]
-    public string Url { get; set; } = "";
+    public string? Url { get; set; }
+
+    [JsonPropertyName("custom_id")]
+    public string? CustomId { get; set; }
 
     [JsonPropertyName("emoji")]
     public DiscordEmoji? Emoji { get; set; }

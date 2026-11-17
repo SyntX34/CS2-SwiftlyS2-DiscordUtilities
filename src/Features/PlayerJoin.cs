@@ -48,10 +48,10 @@ public partial class DiscordUtilities
             if (player.IsFakeClient)
                 return;
 
-            Core.Scheduler.NextTick(() =>
-            {
-                _ = Task.Run(() => SendPlayerJoinedAsync(player));
-            });
+            var playerName = player.Name;
+            var steamId = player.SteamID;
+            var ip = player.IPAddress;
+            _ = SendPlayerJoinedAsync(playerName, steamId, ip);
         }
         catch (Exception ex)
         {
@@ -72,6 +72,7 @@ public partial class DiscordUtilities
             var connectedTime = player?.ConnectedTime ?? 0;
             var playerSlot = @event.PlayerId;
             var reason = @event.Reason.ToString();
+            var ip = player?.IPAddress;
 
             if (player?.IsFakeClient == true)
                 return;
@@ -82,7 +83,8 @@ public partial class DiscordUtilities
                     steamId,
                     connectedTime,
                     playerSlot,
-                    reason
+                    reason,
+                    ip
                 )
             );
         }
@@ -95,14 +97,14 @@ public partial class DiscordUtilities
         }
     }
 
-    private async Task SendPlayerJoinedAsync(IPlayer player)
+    private async Task SendPlayerJoinedAsync(string playerName, ulong steamId, string? ip)
     {
         try
         {
             var config = Config.PlayerJoined;
 
             if (Webhook.IsOnCooldown(
-                    $"player_join_{player.SteamID}",
+                    $"player_join_{steamId}",
                     config.CooldownSeconds))
             {
                 return;
@@ -110,65 +112,10 @@ public partial class DiscordUtilities
 
             var serverName = GetServerDisplayName();
 
-            var embed = new DiscordEmbed
-            {
-                Title = "🟢 Player Joined",
-                Color = WebhookService.ParseColor(config.JoinEmbedColor),
-                Footer = new EmbedFooter
-                {
-                    Text = $"{serverName} • Discord Utilities"
-                }
-            };
-
-            embed.WithTimestamp();
-
-            embed.AddField(
-                "Player",
-                $"**{player.Name}**",
-                true
-            );
-
-            if (config.ShowSteamId && player.SteamID != 0)
-            {
-                embed.AddField(
-                    "SteamID",
-                    $"`{player.SteamID}`",
-                    true
-                );
-            }
-
-            if (config.ShowPlayerCount)
-            {
-                embed.AddField(
-                    "Players Online",
-                    $"{GetOnlinePlayerCount()}",
-                    true
-                );
-            }
-
-            if (config.ShowPlayerSlot)
-            {
-                embed.AddField(
-                    "Slot",
-                    $"`{player.Slot}`",
-                    true
-                );
-            }
-
-            if (config.ShowSteamProfile && player.SteamID != 0)
-            {
-                embed.AddField(
-                    "Steam Profile",
-                    $"[View Profile](https://steamcommunity.com/profiles/{player.SteamID})",
-                    false
-                );
-            }
-
-            await Webhook.SendEmbedAsync(
-                config.WebhookUrl,
-                embed,
-                username: serverName
-            );
+            var country = await DiscordPlayerFormat.LookupCountryAsync(ip);
+            var line = DiscordPlayerFormat.PlayerLink(playerName, steamId, country);
+            var message = DiscordText.Get("discord.player.joined", "{0} joined the server.", line);
+            await Webhook.SendMessageAsync(config.WebhookUrl, message, username: serverName);
         }
         catch (Exception ex)
         {
@@ -184,7 +131,7 @@ public partial class DiscordUtilities
         ulong steamId,
         uint connectedTime,
         int playerSlot,
-        string disconnectReason)
+        string disconnectReason, string? ip)
     {
         try
         {
@@ -199,108 +146,10 @@ public partial class DiscordUtilities
 
             var serverName = GetServerDisplayName();
 
-            var embed = new DiscordEmbed
-            {
-                Title = "🔴 Player Left",
-                Color = WebhookService.ParseColor(config.LeaveEmbedColor),
-                Footer = new EmbedFooter
-                {
-                    Text = $"{serverName} • Discord Utilities"
-                }
-            };
-
-            embed.WithTimestamp();
-
-            embed.AddField(
-                "Player",
-                $"**{playerName}**",
-                true
-            );
-
-            if (config.ShowSteamId && steamId != 0)
-            {
-                embed.AddField(
-                    "SteamID",
-                    $"`{steamId}`",
-                    true
-                );
-            }
-
-            if (config.ShowPlayerCount)
-            {
-                var playersOnline = Math.Max(
-                    0,
-                    GetOnlinePlayerCount() - 1
-                );
-
-                embed.AddField(
-                    "Players Online",
-                    $"{playersOnline}",
-                    true
-                );
-            }
-
-            if (config.ShowPlayerSlot)
-            {
-                embed.AddField(
-                    "Slot",
-                    $"`{playerSlot}`",
-                    true
-                );
-            }
-
-            if (config.ShowConnectionTime && connectedTime > 0)
-            {
-                var time = TimeSpan.FromSeconds(connectedTime);
-
-                string duration;
-
-                if (time.TotalHours >= 1)
-                {
-                    duration =
-                        $"{(int)time.TotalHours}h {time.Minutes}m";
-                }
-                else if (time.TotalMinutes >= 1)
-                {
-                    duration =
-                        $"{time.Minutes}m {time.Seconds}s";
-                }
-                else
-                {
-                    duration =
-                        $"{time.Seconds}s";
-                }
-
-                embed.AddField(
-                    "Session Time",
-                    $"`{duration}`",
-                    true
-                );
-            }
-            if (config.ShowDisconnectReason &&
-                !string.IsNullOrWhiteSpace(disconnectReason))
-            {
-                embed.AddField(
-                    "Disconnect Reason",
-                    $"`{disconnectReason}`",
-                    false
-                );
-            }
-
-            if (config.ShowSteamProfile && steamId != 0)
-            {
-                embed.AddField(
-                    "Steam Profile",
-                    $"[View Profile](https://steamcommunity.com/profiles/{steamId})",
-                    false
-                );
-            }
-
-            await Webhook.SendEmbedAsync(
-                config.WebhookUrl,
-                embed,
-                username: serverName
-            );
+            var country = await DiscordPlayerFormat.LookupCountryAsync(ip);
+            var line = DiscordPlayerFormat.PlayerLink(playerName, steamId, country);
+            var message = DiscordText.Get("discord.player.left", "{0} left the server.", line);
+            await Webhook.SendMessageAsync(config.WebhookUrl, message, username: serverName);
         }
         catch (Exception ex)
         {
