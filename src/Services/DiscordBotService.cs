@@ -377,18 +377,69 @@ public sealed class DiscordBotService : IDisposable
         return null;
     }
 
+    // Read the actual Discord message so report buttons remain usable after a server/plugin restart.
+    public static async Task<DiscordEmbed?> GetInteractiveReportEmbedAsync(string token, string channelId,
+        string messageId, string expectedCustomId, ILogger logger)
+    {
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(channelId) ||
+            string.IsNullOrWhiteSpace(messageId)) return null;
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get,
+                $"https://discord.com/api/v10/channels/{channelId}/messages/{messageId}");
+            req.Headers.Add("Authorization", $"Bot {token}");
+            using var res = await _httpClient.SendAsync(req);
+            if (!res.IsSuccessStatusCode)
+            {
+                logger.LogWarning("[DiscordUtilities] Could not load report message from Discord ({Status})", res.StatusCode);
+                return null;
+            }
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
+            // Only handle messages containing the expected report button.
+            if (!root.TryGetProperty("components", out var rows) || rows.ValueKind != JsonValueKind.Array)
+                return null;
+            var found = false;
+            foreach (var row in rows.EnumerateArray())
+            {
+                if (!row.TryGetProperty("components", out var buttons) || buttons.ValueKind != JsonValueKind.Array) continue;
+                foreach (var button in buttons.EnumerateArray())
+                {
+                    if (!button.TryGetProperty("custom_id", out var id) || id.GetString() != expectedCustomId) continue;
+                    if (button.TryGetProperty("disabled", out var disabled) && disabled.ValueKind == JsonValueKind.True)
+                        return null;
+                    found = true;
+                }
+            }
+            if (!found || !root.TryGetProperty("embeds", out var embeds) || embeds.GetArrayLength() == 0)
+                return null;
+            var embed = JsonSerializer.Deserialize<DiscordEmbed>(embeds[0].GetRawText());
+            // A handled report is never reopened, even after a restart.
+            if (embed?.Color == 0x57F287) return null;
+            return embed;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[DiscordUtilities] Failed to read existing Discord report");
+            return null;
+        }
+    }
+
     public static async Task<string?> UpsertInteractiveEmbedAsync(string token, string channelId,
-        DiscordEmbed embed, string customId, string buttonLabel, string? messageId = null)
+        DiscordEmbed embed, string customId, string buttonLabel, string? messageId = null,
+        string? content = null, bool disableButton = false)
     {
         if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(channelId)) return null;
         try
         {
             var payload = new
             {
+                content,
+                allowed_mentions = new { parse = new[] { "roles", "users", "everyone" } },
                 embeds = new[] { embed },
                 components = new[] { new { type = 1, components = new[] { new
                 {
-                    type = 2, style = 1, custom_id = customId, label = buttonLabel
+                    type = 2, style = 1, custom_id = customId, label = buttonLabel, disabled = disableButton
                 } } } }
             };
             using var req = new HttpRequestMessage(messageId == null ? HttpMethod.Post : HttpMethod.Patch,
@@ -398,7 +449,9 @@ public sealed class DiscordBotService : IDisposable
             using var res = await _httpClient.SendAsync(req);
             // A manually deleted panel cannot be PATCHed. Recreate it only for 404;
             // do not create duplicates on timeouts, permission errors or rate limits.
-            if (res.StatusCode == System.Net.HttpStatusCode.NotFound && messageId != null)
+            if (res.StatusCode == System.Net.HttpStatusCode.NotFound && messageId != null &&
+                !customId.StartsWith("discordutilities:handle:", StringComparison.Ordinal) &&
+                !customId.StartsWith("discordutilities:bughandle:", StringComparison.Ordinal))
                 return await UpsertInteractiveEmbedAsync(token, channelId, embed, customId, buttonLabel);
             if (!res.IsSuccessStatusCode) return null;
             using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
