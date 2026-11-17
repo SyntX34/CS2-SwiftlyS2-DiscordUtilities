@@ -428,6 +428,31 @@ public sealed class DiscordBotService : IDisposable
         }
     }
 
+    public static async Task<bool> HasGuildMemberRoleAsync(string botToken, string guildId, string userId, string roleId, ILogger? logger = null)
+    {
+        if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(guildId) ||
+            string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(roleId)) return false;
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"https://discord.com/api/v10/guilds/{guildId}/members/{userId}");
+            req.Headers.Add("Authorization", $"Bot {botToken}");
+            using var res = await _httpClient.SendAsync(req);
+            if (!res.IsSuccessStatusCode)
+            {
+                logger?.LogWarning("[DiscordUtilities] Could not verify Discord member role ({Status})", res.StatusCode);
+                return false;
+            }
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+            return doc.RootElement.TryGetProperty("roles", out var roles) && roles.ValueKind == JsonValueKind.Array &&
+                roles.EnumerateArray().Any(r => r.ValueKind == JsonValueKind.String && r.GetString() == roleId);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "[DiscordUtilities] Discord member role check failed");
+            return false;
+        }
+    }
+
     public static async Task<bool> AddGuildMemberRoleAsync(string botToken, string guildId, string userId, string roleId, ILogger? logger = null)
     {
         if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(guildId) ||

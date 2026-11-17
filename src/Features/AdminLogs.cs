@@ -168,65 +168,49 @@ public partial class DiscordUtilities
 
             var (category, icon) = CategorizeCommand(commandName);
             var serverName = GetServerDisplayName();
-            var adminName = adminPlayer != null
-                ? adminPlayer.Name
-                : DiscordText.Get("discord.adminlogs.console", "Console / Server");
 
-            // Compact one-line log: no embed, no large banner, no Steam avatar lookup.
-            // Discord webhook content limit is 2000 characters.
-            var safeName = EscapeDiscordLogText(adminName, 80);
-            var safeCommand = EscapeDiscordLogText(commandName, 80);
-            var safeArgs = EscapeDiscordLogText(commandArgs, 700);
-            var categoryKey = AdminLogCategoryKey(commandName);
-            var translatedCategory = DiscordText.Get($"discord.adminlogs.category.{categoryKey}", category);
-            // Plain text only: Discord automatically expands Steam profile URLs
-            // into a large preview card even when the message has no embed.
-            var actor = safeName;
-            var content = string.IsNullOrWhiteSpace(safeArgs)
-                ? DiscordText.Get("discord.adminlogs.line", "{0} **{1}** used `{2}` ({3}).",
-                    icon, actor, safeCommand, translatedCategory)
-                : DiscordText.Get("discord.adminlogs.line_args", "{0} **{1}** used `{2}` with `{3}` ({4}).",
-                    icon, actor, safeCommand, safeArgs, translatedCategory);
-            await Webhook.SendMessageAsync(config.WebhookUrl, content,
-                username: $"{serverName} Admin Logs");
+            var adminName = adminPlayer != null ? adminPlayer.Name : "Console / Server";
+            ulong adminSteamId = adminPlayer != null ? adminPlayer.SteamID : 0;
+            string? adminAvatar = null;
 
+            if (adminSteamId != 0)
+            {
+                adminAvatar = await SteamApi.GetPlayerAvatarAsync(adminSteamId);
+            }
+
+            var embed = new DiscordEmbed
+            {
+                Title = $"{icon} Admin Command: `{commandName}`",
+                Color = WebhookService.ParseColor(config.EmbedColor),
+                Author = new EmbedAuthor
+                {
+                    Name = adminName,
+                    IconUrl = adminAvatar
+                },
+                Footer = new EmbedFooter { Text = $"{serverName} • Discord Utilities" }
+            };
+            embed.WithTimestamp();
+
+            embed.AddField("Administrator", adminSteamId != 0 ? $"**{adminName}** (`{adminSteamId}`)" : $"**{adminName}**", true);
+            embed.AddField("Category", category, true);
+
+            if (!string.IsNullOrWhiteSpace(commandArgs))
+            {
+                var displayArgs = commandArgs.Length > 900 ? commandArgs[..900] + "..." : commandArgs;
+                embed.AddField("Arguments", $"```{displayArgs}```", false);
+            }
+
+            if (!string.IsNullOrWhiteSpace(config.BannerUrl))
+            {
+                embed.Image = new EmbedImage { Url = config.BannerUrl };
+            }
+
+            await Webhook.SendEmbedAsync(config.WebhookUrl, embed, username: $"{serverName} Admin Logs");
         }
         catch (Exception ex)
         {
             Core.Logger.LogError(ex, "[DiscordUtilities] AdminLogs failed for: {Command}", commandName);
         }
-    }
-
-    private static string EscapeDiscordLogText(string? text, int maxLength)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return "";
-        var trimmed = text.Trim();
-        if (trimmed.Length > maxLength) trimmed = trimmed[..maxLength] + "…";
-        return trimmed.Replace("\\", "\\\\").Replace("`", "ʼ")
-            .Replace("*", "∗").Replace("_", "＿")
-            .Replace("@", "@\u200b").Replace("\r", " ").Replace("\n", " ");
-    }
-
-    private static string AdminLogCategoryKey(string command)
-    {
-        var lower = command.ToLowerInvariant();
-        if (lower.Contains("ban")) return "ban";
-        if (lower.Contains("kick")) return "kick";
-        if (lower is "mute" or "gag" or "silence") return "mute";
-        if (lower is "unmute" or "ungag" or "unsilence") return "unmute";
-        if (lower is "slay" or "slap" or "burn" or "blind" or "beacon") return "punish";
-        if (lower is "freeze" or "unfreeze" or "respawn") return "player_action";
-        if (lower is "noclip" or "god" or "teleport") return "admin_tool";
-        if (lower is "hp" or "armor" or "speed" or "gravity" or "team" or "give" or "strip" or "spec") return "player_modify";
-        if (lower is "csay" or "hsay" or "psay" or "msay" or "tsay") return "admin_chat";
-        if (lower.Contains("vote")) return "vote";
-        if (lower is "changelevel" or "map" or "host_workshop_map" or "votemap") return "map_change";
-        if (lower is "rcon" or "exec" or "cvar") return "rcon";
-        if (lower is "addadmin" or "removeadmin" or "reloadadmins" or "admin" or "menu") return "admin_mgmt";
-        if (lower.Contains("plugin") || lower.Contains("reload")) return "plugin_mgmt";
-        if (lower.StartsWith("sw_") || lower.StartsWith("css_") || lower.StartsWith("sm_")) return "server_command";
-        if (lower.StartsWith("mp_")) return "game_setting";
-        return "command";
     }
 
     private static (string Category, string Icon) CategorizeCommand(string command)

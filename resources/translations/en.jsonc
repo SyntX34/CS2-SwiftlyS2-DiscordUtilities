@@ -1,5 +1,5 @@
 {
-  "prefix": "[green][DC-Utilities][default]",
+  "prefix": "[green][DiscordUtilities][default]",
   "discord_invite": "Discord invite: [gold]{0}[default]",
   "verification.database_error": "[red]Account database unavailable. Contact an administrator.[default]",
   "calladmin.cooldown": "Please wait [gold]{0}s[default] before calling an admin again.",

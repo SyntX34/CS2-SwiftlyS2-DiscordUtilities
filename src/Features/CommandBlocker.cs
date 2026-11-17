@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using DiscordUtilities.Services;
 using Microsoft.Extensions.Logging;
 using SwiftlyS2.Shared.Misc;
 
@@ -7,6 +8,35 @@ namespace DiscordUtilities;
 public partial class DiscordUtilities
 {
     private bool _commandBlockerHooked;
+    private readonly ConcurrentDictionary<ulong, (bool HasRole, long CheckedAt)> _roleChecks = new();
+    private readonly ConcurrentDictionary<ulong, byte> _roleChecksInFlight = new();
+    private const long RoleCacheMs = 30000;
+
+    private bool HasVerifiedDiscordRole(ulong steamId)
+    {
+        var settings = Config.Verification;
+        if (string.IsNullOrWhiteSpace(settings.VerifiedRoleId)) return true;
+        var now = Environment.TickCount64;
+        if (_roleChecks.TryGetValue(steamId, out var cached) && now - cached.CheckedAt < RoleCacheMs)
+            return cached.HasRole;
+        if (_roleChecksInFlight.TryAdd(steamId, 0))
+        {
+            var discordId = GetDiscordId(steamId);
+            var token = settings.BotToken;
+            var guild = settings.GuildId;
+            var role = settings.VerifiedRoleId;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var valid = discordId != null && await DiscordBotService.HasGuildMemberRoleAsync(token, guild, discordId, role, Core.Logger);
+                    _roleChecks[steamId] = (valid, Environment.TickCount64);
+                }
+                finally { _roleChecksInFlight.TryRemove(steamId, out _); }
+            });
+        }
+        return false;
+    }
     private readonly ConcurrentDictionary<ulong, long> _blockerLastNotice = new();
     private HashSet<string> _blockerCommands = new(StringComparer.OrdinalIgnoreCase);
 
@@ -60,7 +90,7 @@ public partial class DiscordUtilities
             return HookResult.Continue;
         var player = Core.PlayerManager.GetPlayer(playerId);
         if (player == null || !player.IsValid || player.IsFakeClient) return HookResult.Continue;
-        if (Config.Verification.Enabled && IsPlayerLinked(player.SteamID)) return HookResult.Continue;
+        if (Config.Verification.Enabled && IsPlayerLinked(player.SteamID) && HasVerifiedDiscordRole(player.SteamID)) return HookResult.Continue;
 
         // No permission bypass. O(1) in-memory link and blocked-command lookups.
         // Rate-limit notices because the same chat command may arrive through both hooks.
