@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using DiscordUtilities.Services;
 using Microsoft.Extensions.Logging;
 using SwiftlyS2.Shared.Misc;
+using SwiftlyS2.Shared.Events;
 
 namespace DiscordUtilities;
 
@@ -57,6 +58,10 @@ public partial class DiscordUtilities
         if (_blockerCommands.Count == 0) return;
         _commandBlockerHooked = true;
 
+        // Warm the Discord role cache as soon as the player enters the server.
+        // This also runs after map changes, independently of PlayerJoined notifications.
+        Core.Event.OnClientPutInServer += OnCommandBlockerClientJoined;
+
         // CS2_Admin approach: intercept both chat commands (!ws / /ws)
         // and console commands (ws, say "!ws", say_team "!ws").
         Core.Command.HookClientChat((playerId, text, teamOnly) =>
@@ -83,6 +88,15 @@ public partial class DiscordUtilities
         });
     }
 
+    private void OnCommandBlockerClientJoined(IOnClientPutInServerEvent @event)
+    {
+        var player = Core.PlayerManager.GetPlayer(@event.PlayerId);
+        if (player == null || !player.IsValid || player.IsFakeClient || player.SteamID == 0) return;
+        _roleChecks.TryRemove(player.SteamID, out _);
+        if (Config.Verification.Enabled && IsPlayerLinked(player.SteamID))
+            _ = HasVerifiedDiscordRole(player.SteamID);
+    }
+
     private HookResult ShouldBlockDiscordCommand(int playerId, string rawCommand)
     {
         var command = NormalizeBlockedCommand(rawCommand);
@@ -90,7 +104,8 @@ public partial class DiscordUtilities
             return HookResult.Continue;
         var player = Core.PlayerManager.GetPlayer(playerId);
         if (player == null || !player.IsValid || player.IsFakeClient) return HookResult.Continue;
-        if (Config.Verification.Enabled && IsPlayerLinked(player.SteamID) && HasVerifiedDiscordRole(player.SteamID)) return HookResult.Continue;
+        var linked = Config.Verification.Enabled && IsPlayerLinked(player.SteamID);
+        if (linked && HasVerifiedDiscordRole(player.SteamID)) return HookResult.Continue;
 
         // No permission bypass. O(1) in-memory link and blocked-command lookups.
         // Rate-limit notices because the same chat command may arrive through both hooks.
@@ -98,7 +113,12 @@ public partial class DiscordUtilities
         if (!_blockerLastNotice.TryGetValue(player.SteamID, out var last) || now - last >= 2000)
         {
             _blockerLastNotice[player.SteamID] = now;
-            player.SendChat(LocalizedChat("commandblocker.link_required"));
+            if (linked && _roleChecksInFlight.ContainsKey(player.SteamID))
+                player.SendChat(LocalizedChat("commandblocker.role_check_pending"));
+            else if (linked)
+                player.SendChat(LocalizedChat("commandblocker.role_missing"));
+            else
+                player.SendChat(LocalizedChat("commandblocker.link_required"));
             if (Config.Debug)
                 Core.Logger.LogInformation("[DiscordUtilities] Blocked '{Command}' for {SteamId}", command, player.SteamID);
         }
