@@ -74,6 +74,7 @@ public partial class DiscordUtilities
                 if (_linkedAccounts.TryRemove(player.SteamID, out var removedDiscordId))
                 {
                     if (!SaveLinkedAccounts()) { _linkedAccounts[player.SteamID] = removedDiscordId; player.SendChat(LocalizedChat("verification.database_error")); SendInvite(player); return; }
+                    OnCommandBlockerLinkChanged(player.SteamID, false);
                     // Database unlink succeeded; Discord role removal is an asynchronous best-effort operation.
                     if (!string.IsNullOrWhiteSpace(Config.Verification.GuildId) &&
                         !string.IsNullOrWhiteSpace(Config.Verification.VerifiedRoleId))
@@ -242,6 +243,7 @@ public partial class DiscordUtilities
             return DiscordText.Get("discord.verification.database_error", "Could not save account link.");
         }
 
+        OnCommandBlockerLinkChanged(pending.SteamId, true);
         _pendingVerifications.TryRemove(code.Trim().ToUpperInvariant(), out _);
         if (!string.IsNullOrWhiteSpace(Config.Verification.GuildId) &&
             !string.IsNullOrWhiteSpace(Config.Verification.VerifiedRoleId))
