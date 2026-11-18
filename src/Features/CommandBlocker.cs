@@ -11,14 +11,13 @@ public partial class DiscordUtilities
     private bool _commandBlockerHooked;
     private readonly ConcurrentDictionary<ulong, (bool HasRole, long CheckedAt)> _roleChecks = new();
     private readonly ConcurrentDictionary<ulong, byte> _roleChecksInFlight = new();
-    private const long RoleCacheMs = 30000;
+    // Keep the verified role result for this connection; refresh on the next join/map change.
 
     private bool HasVerifiedDiscordRole(ulong steamId)
     {
         var settings = Config.Verification;
         if (string.IsNullOrWhiteSpace(settings.VerifiedRoleId)) return true;
-        var now = Environment.TickCount64;
-        if (_roleChecks.TryGetValue(steamId, out var cached) && now - cached.CheckedAt < RoleCacheMs)
+        if (_roleChecks.TryGetValue(steamId, out var cached))
             return cached.HasRole;
         if (_roleChecksInFlight.TryAdd(steamId, 0))
         {
