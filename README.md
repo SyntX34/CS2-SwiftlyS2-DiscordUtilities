@@ -5,7 +5,7 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/SyntX34/CS2-SwiftlyS2-DiscordUtilities/releases"><img src="https://img.shields.io/badge/version-latest-blue.svg" alt="Version"></a>
+  <a href="https://github.com/SyntX34/CS2-SwiftlyS2-DiscordUtilities/releases"><img src="https://img.shields.io/badge/version-1.1.6-blue.svg" alt="Version"></a>
   <a href="https://github.com/swiftly-solution/swiftlys2"><img src="https://img.shields.io/badge/framework-SwiftlyS2-orange.svg" alt="Framework"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
 </p>
@@ -16,12 +16,12 @@
 |---------|-------------|---------|
 | 🗺️ **Map Notifications** | Rich embeds on map change — workshop detection, preview images from Steam API, player count, custom banners | Separate webhook |
 | 💬 **Chat Relay** | Server chat → Discord with player Steam avatars, per-player cooldowns, command filtering | Separate webhook |
-| 🔒 **Admin Logs** | Logs admin commands (ban/kick/mute/slap/map changes/cvar/rcon) as compact one-line Discord messages, with optional console filtering | Separate webhook |
+| 🔒 **Admin Logs** | Logs admin commands (ban/kick/mute/slap/map changes/cvar/rcon) with categorized Discord embeds and optional console filtering | Separate webhook |
 | 🚨 **CallAdmin** | In-game player reporting (`!calladmin`, `!report`, `sw_calladmin`) to Discord with target detection, cooldowns, and role pings | Separate webhook |
 | 🐛 **Bug Report** | In-game bug reporting menu (`!bug`, `!bugreport`) with customizable preconfigured reasons (`bug_reasons.jsonc`) & custom details | Separate webhook |
 | 🔄 **Discord → Server** | Relay Discord channel messages into in-game chat — requires bot token and channel ID | Separate channel |
 | 🔗 **Verification (Linking)** | Link Steam accounts to Discord via `!link` / `!verify` codes, with Discord role assignment, persistent links, and an interactive verification panel | Bot channel / Webhook |
-| 🚫 **Command Blocker** | Block specified client commands until the player links their Steam and Discord accounts | Separate webhook |
+| 🚫 **Command Blocker** | Block specified client commands until the player links their accounts and has the verified role | Separate webhook |
 | 🖥️ **Discord RCON** | Execute server console commands (e.g. mute, gag, kick, ban) directly from Discord for authorized user IDs | Bot channel |
 
 ### Feature Previews
@@ -56,7 +56,7 @@ Live server chat relayed straight to Discord using player Steam profile avatars 
 <summary><b>🔒 Admin Action Logs</b></summary>
 <br>
 
-Compact, single-line admin command logs with no large embed or Steam profile preview. Command categories and message text are translatable.
+Admin command logs with categorized Discord embeds, command details, and optional console filtering.
 
 <p align="center">
   <a href="readme/images/admin_logs.png" target="_blank">
@@ -114,49 +114,82 @@ In-game reporting system via `!bug` or `!bugreport`. Players can choose from pre
 
 The plugin uses **JSONC** (JSON with Comments) for configuration, auto-generated on first run. Some settings may require a plugin reload, particularly bot and verification settings.
 
-### Key Settings
+### Configuration example
+
+This example includes all settings from the current configuration model. Set webhook URLs, bot credentials, and IDs for the features you enable. The plugin also generates `config.jsonc` automatically on first start.
 
 ```jsonc
 {
   "DiscordUtilities": {
-    // Steam Web API key (required for avatars & workshop images)
+    // Enable additional diagnostic logging.
+    "Debug": false,
+    // Steam Web API key (required for avatars & Workshop images).
     "SteamApiKey": "YOUR_STEAM_API_KEY",
-    // Server display name (leave empty to auto-detect from hostname convar)
+    // Server display name (leave empty to auto-detect from hostname convar).
     "ServerName": "",
-    // Server IP:port (leave empty to auto-detect from ip + hostport convars)
+    // Server IP:port (leave empty to auto-detect from ip + hostport convars).
     "ServerIP": "",
-    // Override DNS / domain connect address (e.g. "zm.novazombie.com")
+    // Override DNS / domain connect address (e.g. "zm.novazombie.com").
     "ServerDNS": "zm.novazombie.com",
-
+    // Keep one Discord server-status message updated at the configured interval.
     "MapNotification": {
       "Enabled": true,
       "WebhookUrl": "https://discord.com/api/webhooks/...",
-      // Optional banner image URL (fallback if map has no workshop image)
+      // Optional banner image URL (fallback if the map has no Workshop image).
       "BannerUrl": "",
       "EmbedColor": "#5865F2",
       "ShowWorkshopId": true,
       "ShowPlayerCount": true,
       "ShowServerIP": true,
-      "CooldownSeconds": 10
+      "CooldownSeconds": 10,
+      // How often to refresh the existing Discord status message (seconds).
+      "RefreshSeconds": 30
     },
-
+    // Forward in-game chat messages to a Discord webhook.
     "ChatRelay": {
       "Enabled": true,
-      "WebhookUrl": "https://discord.com/api/webhooks/...",
-      "BannerUrl": "",
+      "WebhookUrl": "",
       "UseSteamAvatars": true,
+      // Player name format used by the chat relay.
+      "UsernameFormat": "{PlayerName}",
+      // Format for regular chat messages.
+      "MessageFormat": "{Message}",
+      // Format for team chat messages.
+      "TeamMessageFormat": "(TEAM) {Message}",
       "CooldownSeconds": 1,
       "IgnoreCommands": true,
+      // Message prefixes/commands excluded from chat relay.
+      "IgnoredPrefixes": [
+        "!",
+        "/",
+        "rtv",
+        "nominate",
+        "nextmap",
+        "timeleft",
+        "currentmap"
+      ],
       "IgnoreTeamChat": false
     },
-
+    // Forward messages from a Discord channel into in-game chat.
+    "DiscordToServer": {
+      "Enabled": false,
+      "BotToken": "",
+      "ChannelId": "",
+      // Prefix shown in-game for messages coming from Discord.
+      "ChatPrefix": "[Discord]",
+      // Color of the Discord chat prefix in-game.
+      "ChatColor": "#7289DA",
+      // Template for Discord-to-server chat messages.
+      "TagFormat": "{ChatPrefix} {DiscordName}: {Message}"
+    },
+    // Send admin activity logs as Discord embeds to a dedicated webhook.
     "AdminLogs": {
       "Enabled": true,
-      "WebhookUrl": "https://discord.com/api/webhooks/...",
-      // Retained setting; admin logs are sent as compact text messages
+      "WebhookUrl": "",
+      // Optional banner image URL shown in admin log embeds.
       "BannerUrl": "",
       "EmbedColor": "#ED4245",
-      // Set to true to skip commands executed by server console/server scripts
+      // Set to true to skip commands executed by the server console/scripts.
       "IgnoreConsole": true,
       "LogCommands": true,
       "LogMapChanges": true,
@@ -164,31 +197,105 @@ The plugin uses **JSONC** (JSON with Comments) for configuration, auto-generated
       "LogRcon": true,
       "CooldownSeconds": 2
     },
-
+    // Player reports with an interactive Handle button on Discord.
     "CallAdmin": {
       "Enabled": true,
-      "WebhookUrl": "https://discord.com/api/webhooks/...",
-      // Mention admin role or user (e.g. "<@&ROLE_ID>" or "@here")
+      "WebhookUrl": "",
+      // Mention staff by role ID (e.g. "1130482774336344204") or use @here.
       "MentionRoleOrUser": "",
       "BannerUrl": "",
       "EmbedColor": "#FFA500",
+      // Title displayed in the in-game report menu.
+      "MenuTitle": "CallAdmin - Select Player / Reason",
       "CooldownSeconds": 30,
+      // Minimum number of characters required for a custom reason.
       "MinimumReasonLength": 3
     },
-
+    // Bug reports with an interactive Handle button on Discord.
     "BugReport": {
       "Enabled": true,
-      "WebhookUrl": "https://discord.com/api/webhooks/...",
+      "WebhookUrl": "",
+      // Mention staff by role ID (e.g. "1130482774336344204") or use @here.
       "MentionRoleOrUser": "",
       "BannerUrl": "",
       "EmbedColor": "#FFFF00",
+      // Title displayed in the in-game report menu.
       "MenuTitle": "Report a Bug / Issue",
       "CooldownSeconds": 30,
+      // Minimum number of characters required for a custom reason.
       "MinimumReasonLength": 3
+    },
+    // Optional player join/leave notifications.
+    "PlayerJoined": {
+      "Enabled": false,
+      "WebhookUrl": "",
+      "CooldownSeconds": 2,
+      "JoinEmbedColor": "#57F287",
+      "LeaveEmbedColor": "#ED4245",
+      "ShowSteamId": false,
+      "ShowSteamProfile": true,
+      "ShowPlayerCount": true,
+      "ShowPlayerSlot": false,
+      // Include the player connection duration on leave.
+      "ShowConnectionTime": true,
+      // Include the disconnect reason when available.
+      "ShowDisconnectReason": true
+    },
+    // Steam–Discord account linking and optional verified-role assignment.
+    "Verification": {
+      // Discord invite shown to players who need to link their account.
+      "DiscordInvite": "",
+      "Enabled": false,
+      "BotToken": "",
+      "ChannelId": "",
+      // Discord server (guild) ID used for verification and role management.
+      "GuildId": "",
+      // Discord role ID assigned to successfully linked members.
+      "VerifiedRoleId": "",
+      "Commands": {
+        "Link": "link",
+        "LinkAliases": [
+          "discord",
+          "dc",
+          "verify"
+        ],
+        "Unlink": "unlink",
+        "UnlinkAliases": [
+          "unverify"
+        ]
+      },
+      "LinkCommand": "link",
+      "UnlinkCommand": "unlink",
+      // How long a generated verification code remains valid.
+      "CodeExpiryMinutes": 5,
+      "WebhookUrl": ""
+    },
+    // Block configured commands for players who are not verified.
+    "CommandBlocker": {
+      "Enabled": false,
+      // Client commands to restrict.
+      "BlockedCommands": [
+        "kill",
+        "explode"
+      ]
+    },
+    // Allow authorized Discord users to run server console commands.
+    "DiscordRcon": {
+      "Enabled": false,
+      "BotToken": "",
+      "ChannelId": "",
+      // Prefix required for Discord RCON messages.
+      "CommandPrefix": "!rcon ",
+      // Format for RCON output shown in-game.
+      "ConsoleMessageFormat": "[red][Console]: [red]{Message}[default]",
+      // Discord user IDs allowed to execute RCON commands.
+      "AllowedDiscordUserIds": []
     }
   }
 }
 ```
+
+For CallAdmin and BugReport role mentions, you can enter just the numeric Discord role ID (e.g. `1130482774336344204`); the plugin formats the mention automatically. The bot must have permission to mention that role, or the role must be mentionable. The **Handle** button retrieves the existing Discord message, so it also works after a plugin/server restart.
 
 ### Per-Feature Webhooks
 
@@ -206,7 +313,7 @@ Each feature uses its own webhook URL, so you can route notifications to differe
 
 - **Verification:** Players use `!link` (or configured aliases) to receive a code and complete linking through a Discord button/modal. `!unlink` removes the link and the configured verified role. Set `Verification.VerifiedRoleId`, `GuildId`, `BotToken`, and `ChannelId` as needed; linked accounts are stored using SwiftlyS2's `mysql_detailed` database connection.
 - **Discord → Server:** Relays messages from the configured Discord channel into CS2 chat. Configure `DiscordToServer.BotToken` and `ChannelId`.
-- **Command Blocker:** Restricts configured commands until the player's Steam account is linked.
+- **Command Blocker:** Restricts configured commands based on Steam–Discord linking and the configured verified role.
 - **Translations:** Game and Discord messages use the SwiftlyS2 Core language (`resources/translations/<language>.jsonc`), falling back to English for missing keys.
 
 ## Building

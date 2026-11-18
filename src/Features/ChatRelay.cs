@@ -84,8 +84,7 @@ public partial class DiscordUtilities
                 avatarUrl = await SteamApi.GetPlayerAvatarAsync(steamId64);
 
             var steamId2 = ConvertSteamId64ToSteamId2(steamId64);
-            var country = await DiscordPlayerFormat.LookupCountryAsync(ip);
-            var linkedName = DiscordPlayerFormat.PlayerLink(playerName, steamId64, country);
+            var linkedName = DiscordPlayerFormat.PlayerLink(playerName, steamId64);
 
             var teamTag = team switch
             {

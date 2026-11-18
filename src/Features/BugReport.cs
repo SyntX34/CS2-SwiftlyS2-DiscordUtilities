@@ -246,20 +246,24 @@ public partial class DiscordUtilities
         builder.Build().Open(player);
     }
 
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, DiscordEmbed> _bugReportMessages = new();
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, byte> _handledBugReports = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _handledBugReports = new();
 
     private async Task HandleBugReportButtonAsync(string customId, string userId, string userName,
         string interactionId, string interactionToken, string messageId)
     {
         if (!long.TryParse(customId["discordutilities:bughandle:".Length..], out var reportId)) return;
-        if (!_bugReportMessages.TryGetValue(reportId, out var embed))
+        var token = !string.IsNullOrWhiteSpace(Config.Verification.BotToken)
+            ? Config.Verification.BotToken : Config.DiscordToServer.BotToken;
+        var channel = await Webhook.ResolveChannelIdAsync(Config.BugReport.WebhookUrl);
+        var embed = await DiscordBotService.GetInteractiveReportEmbedAsync(token, channel ?? "", messageId,
+            $"discordutilities:bughandle:{reportId}", Core.Logger);
+        if (embed == null)
         {
             await DiscordBotService.AcknowledgeButtonAsync(interactionId, interactionToken,
-                DiscordText.Get("discord.bugreport.unavailable", "Report unavailable after plugin restart."), Core.Logger);
+                "This report is already handled or could not be loaded from Discord.", Core.Logger);
             return;
         }
-        if (!_handledBugReports.TryAdd(reportId, 1))
+        if (!_handledBugReports.TryAdd(messageId, 1))
         {
             await DiscordBotService.AcknowledgeButtonAsync(interactionId, interactionToken,
                 DiscordText.Get("discord.bugreport.already_handled", "This bug report is already handled."), Core.Logger);
@@ -275,13 +279,10 @@ public partial class DiscordUtilities
         };
         updated.AddField(DiscordText.Get("discord.bugreport.status", "Status"),
             DiscordText.Get("discord.bugreport.handled", "Handled by {0}", $"<@{userId}>"), false);
-        var token = !string.IsNullOrWhiteSpace(Config.Verification.BotToken)
-            ? Config.Verification.BotToken : Config.DiscordToServer.BotToken;
-        var channel = await Webhook.ResolveChannelIdAsync(Config.BugReport.WebhookUrl);
         var saved = await DiscordBotService.UpsertInteractiveEmbedAsync(token, channel ?? "", updated,
             $"discordutilities:bughandle:{reportId}",
-            DiscordText.Get("discord.bugreport.handled", "Handled by {0}", userName), messageId);
-        if (saved == null) _handledBugReports.TryRemove(reportId, out _);
+            DiscordText.Get("discord.bugreport.handled", "Handled by {0}", userName), messageId, disableButton: true);
+        if (saved == null) _handledBugReports.TryRemove(messageId, out _);
     }
 
     private async Task SubmitBugReportAsync(IPlayer reporter, string reason)
@@ -401,18 +402,17 @@ public partial class DiscordUtilities
 
             string? mentionContent = string.IsNullOrWhiteSpace(config.MentionRoleOrUser) 
                 ? null 
-                : config.MentionRoleOrUser.Trim();
-
-            _bugReportMessages[reportId] = embed;
+                : ulong.TryParse(config.MentionRoleOrUser.Trim(), out _)
+                    ? $"<@&{config.MentionRoleOrUser.Trim()}>"
+                    : config.MentionRoleOrUser.Trim();
             var botToken = !string.IsNullOrWhiteSpace(Config.Verification.BotToken)
                 ? Config.Verification.BotToken : Config.DiscordToServer.BotToken;
             var reportChannel = await Webhook.ResolveChannelIdAsync(config.WebhookUrl);
             var messageId = await DiscordBotService.UpsertInteractiveEmbedAsync(
                 botToken, reportChannel ?? "", embed, $"discordutilities:bughandle:{reportId}",
-                DiscordText.Get("discord.bugreport.handle", "Handle"));
+                DiscordText.Get("discord.bugreport.handle", "Handle"), content: mentionContent);
             if (messageId == null)
             {
-                _bugReportMessages.TryRemove(reportId, out _);
                 Core.Logger.LogWarning("[DiscordUtilities] BugReport Handle button unavailable; check bot token and channel permissions.");
                 await Webhook.SendEmbedAsync(config.WebhookUrl, embed,
                     username: $"{serverName} BugReport", content: mentionContent, components: components);

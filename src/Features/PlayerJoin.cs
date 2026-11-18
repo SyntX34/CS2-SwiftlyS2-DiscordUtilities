@@ -112,8 +112,7 @@ public partial class DiscordUtilities
 
             var serverName = GetServerDisplayName();
 
-            var country = await DiscordPlayerFormat.LookupCountryAsync(ip);
-            var line = DiscordPlayerFormat.PlayerLink(playerName, steamId, country);
+            var line = DiscordPlayerFormat.PlayerLink(playerName, steamId);
             var message = DiscordText.Get("discord.player.joined", "{0} joined the server.", line);
             await Webhook.SendMessageAsync(config.WebhookUrl, message, username: serverName);
         }
@@ -146,8 +145,7 @@ public partial class DiscordUtilities
 
             var serverName = GetServerDisplayName();
 
-            var country = await DiscordPlayerFormat.LookupCountryAsync(ip);
-            var line = DiscordPlayerFormat.PlayerLink(playerName, steamId, country);
+            var line = DiscordPlayerFormat.PlayerLink(playerName, steamId);
             var message = DiscordText.Get("discord.player.left", "{0} left the server.", line);
             await Webhook.SendMessageAsync(config.WebhookUrl, message, username: serverName);
         }
