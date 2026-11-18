@@ -21,6 +21,8 @@
   "verification.not_linked": "Your account is [gold]not currently linked[default].",
   "verification.linked_ingame": "Your Steam account has been linked to Discord user [gold]{0}[default]!",
   "commandblocker.link_required": "Link your Steam account to Discord to use this command ([gold]!link[default]).",
+  "commandblocker.role_check_pending": "[gold]Discord role verification is in progress. Please try again shortly.[default]",
+  "commandblocker.role_missing": "[red]The required Discord role is missing or verification failed.[default]",
   "discord.commandblocker.attempt": "Blocked Command Attempt",
   "discord.commandblocker.verify_title": "Steam Account Linking",
   "discord.commandblocker.verify_description": "1. Join the CS2 server.\n2. Enter !{0} in the game chat.\n3. Press the button below and enter the generated code.\n4. Your Steam account will be linked to Discord.",
